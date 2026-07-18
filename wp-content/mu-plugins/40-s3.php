@@ -93,6 +93,28 @@ function spritz_rewrite_attachment_url_to_cdn($url, $attachment_id) {
 }
 
 function spritz_s3_put_file($local_path, $key) {
+    return spritz_s3_put_object([
+        'Key' => $key,
+        'SourceFile' => $local_path,
+        'ContentType' => spritz_s3_content_type($local_path),
+    ], $key);
+}
+
+function spritz_s3_put_body($key, $body, $content_type = 'application/octet-stream', $cache_control = null) {
+    $object = [
+        'Key' => $key,
+        'Body' => $body,
+        'ContentType' => $content_type,
+    ];
+
+    if ($cache_control) {
+        $object['CacheControl'] = $cache_control;
+    }
+
+    return spritz_s3_put_object($object, $key);
+}
+
+function spritz_s3_put_object(array $object, $log_key) {
     static $client = null;
 
     if ($client === null) {
@@ -103,7 +125,7 @@ function spritz_s3_put_file($local_path, $key) {
 
         if (!class_exists(S3Client::class)) {
             error_log('Spritz S3 offload skipped: AWS SDK is not available.');
-            return;
+            return false;
         }
 
         $client_config = [
@@ -121,14 +143,13 @@ function spritz_s3_put_file($local_path, $key) {
     }
 
     try {
-        $client->putObject([
+        $client->putObject(array_merge([
             'Bucket' => spritz_s3_bucket(),
-            'Key' => $key,
-            'SourceFile' => $local_path,
-            'ContentType' => spritz_s3_content_type($local_path),
-        ]);
+        ], $object));
+        return true;
     } catch (Throwable $exception) {
-        error_log(sprintf('Spritz S3 offload failed for %s: %s', $key, $exception->getMessage()));
+        error_log(sprintf('Spritz S3 offload failed for %s: %s', $log_key, $exception->getMessage()));
+        return false;
     }
 }
 

@@ -49,6 +49,129 @@ add_action('rest_api_init', function () {
     ]);
 });
 
+add_action('save_post', 'spritz_publish_static_json_to_s3', 15, 3);
+
+function spritz_publish_static_json_to_s3($post_id, $post, $update) {
+    if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) return;
+    if (wp_is_post_revision($post_id)) return;
+    if (wp_is_post_autosave($post_id)) return;
+    if (!$post || $post->post_status !== 'publish') return;
+    if ($post->post_type === 'revision') return;
+    if ($post->post_type === 'attachment') return;
+
+    if (!function_exists('spritz_s3_put_body')) {
+        error_log('Spritz static JSON skipped: S3 publisher is not available.');
+        return;
+    }
+
+    $languages = spritz_static_json_languages();
+    $categories = spritz_get_all_categories_slugs();
+
+    error_log(sprintf(
+        'Spritz static JSON hook start: post=%s languages=%s categories=%s',
+        (string) $post_id,
+        implode(',', $languages),
+        implode(',', $categories)
+    ));
+
+    foreach ($languages as $lang) {
+        $homepage = spritz_static_json_response_data('spritz_get_homepage_json', ['lang' => $lang]);
+        if ($homepage !== null) {
+            $timestamp = (int) floor(microtime(true) * 1000);
+            spritz_write_static_json('', 'homepage-current-' . $lang . '.json', $homepage);
+            spritz_write_static_json('', 'homepage-' . $timestamp . '-' . $lang . '.json', $homepage);
+            error_log(sprintf(
+                'Homepage JSON generated: language=%s articles=%d categories=%d files=homepage-current-%s.json,homepage-%s-%s.json',
+                $lang,
+                isset($homepage['articles']) && is_array($homepage['articles']) ? count($homepage['articles']) : 0,
+                isset($homepage['categories']) && is_array($homepage['categories']) ? count($homepage['categories']) : 0,
+                $lang,
+                (string) $timestamp,
+                $lang
+            ));
+        }
+
+        foreach ($categories as $category_slug) {
+            $category = spritz_static_json_response_data('spritz_get_category_json', [
+                'category' => $category_slug,
+                'lang' => $lang,
+            ]);
+
+            if ($category === null) continue;
+
+            spritz_write_static_json('', $category_slug . '-current-' . $lang . '.json', $category);
+            error_log(sprintf(
+                'Category JSON generated: category=%s language=%s articles=%d',
+                $category_slug,
+                $lang,
+                isset($category['articles']) && is_array($category['articles']) ? count($category['articles']) : 0
+            ));
+        }
+    }
+
+    $article_payload = spritz_build_article_payload($post);
+    $article_slug = '/' . ltrim((string) ($article_payload['slug'] ?? ''), '/');
+    if ($article_slug !== '/') {
+        spritz_write_static_json('json/articles', ltrim($article_slug, '/') . '.json', $article_payload);
+    }
+
+    $inventory = spritz_static_json_response_data('spritz_get_inventory_json', []);
+    if ($inventory !== null) {
+        spritz_write_static_json('', 'cronkite-inventory.json', $inventory);
+    }
+
+    error_log(sprintf('Spritz static JSON hook complete: post=%s', (string) $post_id));
+}
+
+function spritz_static_json_languages(): array {
+    return apply_filters('spritz_static_json_languages', ['en', 'es', 'it']);
+}
+
+function spritz_static_json_response_data($callback, array $params): ?array {
+    $request = new WP_REST_Request('GET');
+    foreach ($params as $key => $value) {
+        $request->set_param($key, $value);
+    }
+
+    $response = call_user_func($callback, $request);
+    $response = rest_ensure_response($response);
+
+    if ($response->get_status() >= 400) {
+        return null;
+    }
+
+    $data = $response->get_data();
+    return is_array($data) ? $data : null;
+}
+
+function spritz_write_static_json($collection_slug, $filename, $payload): void {
+    $collection_slug = trim((string) $collection_slug, '/');
+    $filename = ltrim((string) $filename, '/');
+    $key = 'content/' . ($collection_slug ? $collection_slug . '/' : '') . $filename;
+    $body = wp_json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+
+    $uploaded = spritz_s3_put_body(
+        $key,
+        $body,
+        'application/json',
+        'public, max-age=60, stale-while-revalidate=300'
+    );
+
+    if ($uploaded) {
+        error_log(sprintf('Static JSON uploaded: s3://%s/%s', spritz_s3_bucket(), $key));
+    }
+}
+
+function spritz_static_content_url($path): string {
+    $path = ltrim((string) $path, '/');
+
+    if (function_exists('spritz_s3_cloudfront_domain') && spritz_s3_cloudfront_domain()) {
+        return 'https://' . spritz_s3_cloudfront_domain() . '/content/' . $path;
+    }
+
+    return get_site_url() . '/wp-json/spritz/v1/' . $path;
+}
+
 // ── Article JSON ──────────────────────────────────────────────────
 function spritz_get_article_json(WP_REST_Request $request) {
     $slug = $request->get_param('slug');
@@ -172,7 +295,7 @@ function spritz_get_inventory_json(WP_REST_Request $request) {
         $slug = '/' . ltrim(get_post_field('post_name', $post), '/');
         $cats = wp_get_post_categories($post->ID, ['fields' => 'slugs']);
         $cat_prefix = !empty($cats) ? '/' . $cats[0] : '';
-        $url = get_site_url() . '/wp-json/spritz/v1/json/articles' . $cat_prefix . $slug . '.json';
+        $url = spritz_static_content_url('json/articles' . $cat_prefix . $slug . '.json');
 
         $documents[] = [
             'type'     => 'article',
@@ -191,7 +314,7 @@ function spritz_get_inventory_json(WP_REST_Request $request) {
                 'type'     => 'category',
                 'locale'   => $lang,
                 'slug'     => $cat_slug,
-                'url'      => get_site_url() . '/wp-json/spritz/v1/' . $cat_slug . '-current-' . $lang . '.json',
+                'url'      => spritz_static_content_url($cat_slug . '-current-' . $lang . '.json'),
             ];
         }
     }
@@ -200,7 +323,7 @@ function spritz_get_inventory_json(WP_REST_Request $request) {
         $documents[] = [
             'type'     => 'homepage',
             'locale'   => $lang,
-            'url'      => get_site_url() . '/wp-json/spritz/v1/homepage-current-' . $lang . '.json',
+            'url'      => spritz_static_content_url('homepage-current-' . $lang . '.json'),
         ];
     }
 
@@ -278,7 +401,7 @@ function spritz_build_article_reference(WP_Post $post, string $lang): array {
 
     return [
         'id'      => (string) $post->ID,
-        'url'     => get_site_url() . $url,
+        'url'     => $url,
         'title'   => get_the_title($post),
         'excerpt' => get_the_excerpt($post) ?: '',
         'featured' => has_term('featured', 'post_tag', $post->ID),
