@@ -17,10 +17,29 @@ fi
 : "${ADMIN_PASSWORD:=admin}"
 : "${ADMIN_EMAIL:=admin@example.com}"
 
-# Wait for MySQL
-until mysqladmin ping -h"$DB_HOST" -u"$DB_USER" -p"$DB_PASSWORD" --silent; do
+mysql_ready() {
+  php -r '
+    mysqli_report(MYSQLI_REPORT_OFF);
+    $conn = mysqli_init();
+    $flags = 0;
+    if (defined("MYSQLI_CLIENT_SSL")) {
+        $flags |= MYSQLI_CLIENT_SSL;
+    }
+    if (defined("MYSQLI_CLIENT_SSL_DONT_VERIFY_SERVER_CERT")) {
+        $flags |= MYSQLI_CLIENT_SSL_DONT_VERIFY_SERVER_CERT;
+    }
+    if (!@$conn->real_connect(getenv("DB_HOST"), getenv("DB_USER"), getenv("DB_PASSWORD"), getenv("DB_NAME"), null, null, $flags)) {
+        fwrite(STDERR, "MySQL connection failed: " . $conn->connect_error . PHP_EOL);
+        exit(1);
+    }
+    $conn->close();
+  '
+}
+
+# Wait for MySQL using PHP mysqli, the same client path WordPress uses.
+until mysql_ready; do
   echo "Waiting for MySQL..."
-  sleep 2
+  sleep 10
 done
 echo "MySQL is ready"
 

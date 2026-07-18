@@ -7,6 +7,17 @@ define('DB_PASSWORD', getenv('DB_PASSWORD') ?: '');
 define('DB_CHARSET', 'utf8mb4');
 define('DB_COLLATE', '');
 
+if (!defined('MYSQL_CLIENT_FLAGS')) {
+    $mysql_client_flags = 0;
+    if (defined('MYSQLI_CLIENT_SSL')) {
+        $mysql_client_flags |= MYSQLI_CLIENT_SSL;
+    }
+    if (defined('MYSQLI_CLIENT_SSL_DONT_VERIFY_SERVER_CERT')) {
+        $mysql_client_flags |= MYSQLI_CLIENT_SSL_DONT_VERIFY_SERVER_CERT;
+    }
+    define('MYSQL_CLIENT_FLAGS', $mysql_client_flags);
+}
+
 define('WP_HOME', getenv('WP_HOME') ?: 'http://localhost:8080');
 define('WP_SITEURL', getenv('WP_SITEURL') ?: 'http://localhost:8080');
 define('FS_METHOD', 'direct');
