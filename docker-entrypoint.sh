@@ -17,6 +17,9 @@ fi
 : "${ADMIN_PASSWORD:=admin}"
 : "${ADMIN_EMAIL:=admin@example.com}"
 
+mkdir -p /var/www/html/wordpress/wp-content/uploads
+chown -R www-data:www-data /var/www/html/wordpress/wp-content/uploads
+
 mysql_ready() {
   php -r '
     mysqli_report(MYSQLI_REPORT_OFF);
