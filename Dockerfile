@@ -15,6 +15,8 @@ WORKDIR /var/www/html
 
 COPY composer.json .
 RUN composer install --no-interaction --optimize-autoloader --no-dev
+RUN mkdir -p /var/www/html/wordpress/wp-content/plugins \
+    && cp -R /var/www/html/wp-content/plugins/. /var/www/html/wordpress/wp-content/plugins/
 
 RUN curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar \
     && chmod +x wp-cli.phar \

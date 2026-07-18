@@ -56,15 +56,6 @@ if ! wp core is-installed --allow-root --path=/var/www/html/wordpress 2>/dev/nul
     --allow-root \
     --path=/var/www/html/wordpress
 
-  # Activate plugins
-  echo "Activating plugins..."
-  wp plugin activate \
-    advanced-custom-fields \
-    amazon-s3-and-cloudfront \
-    daggerhart-openid-connect-generic \
-    --allow-root \
-    --path=/var/www/html/wordpress 2>/dev/null || true
-
   # Activate theme
   echo "Activating theme..."
   wp theme activate headless-placeholder \
@@ -73,5 +64,13 @@ if ! wp core is-installed --allow-root --path=/var/www/html/wordpress 2>/dev/nul
 
   echo "WordPress installed"
 fi
+
+echo "Activating plugins..."
+wp plugin activate \
+  advanced-custom-fields \
+  amazon-s3-and-cloudfront \
+  daggerhart-openid-connect-generic \
+  --allow-root \
+  --path=/var/www/html/wordpress || true
 
 exec /usr/bin/supervisord -c /etc/supervisord.conf
