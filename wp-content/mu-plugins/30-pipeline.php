@@ -325,6 +325,10 @@ function spritz_map_wp_block_to_canonical(array $wp_block): array {
                 return [['type' => 'tiktok', 'url' => $url]];
             }
 
+            if ($provider === 'spotify' || str_contains($url, 'open.spotify.com')) {
+                return [['type' => 'spotify', 'url' => $url]];
+            }
+
             return spritz_rich_text_blocks(spritz_render_wp_block($wp_block));
 
         case 'core-embed/youtube':
@@ -338,6 +342,10 @@ function spritz_map_wp_block_to_canonical(array $wp_block): array {
         case 'core-embed/instagram':
             $url = spritz_block_url($wp_block);
             return $url ? [['type' => 'instagram', 'url' => $url]] : [];
+
+        case 'core-embed/spotify':
+            $url = spritz_block_url($wp_block);
+            return $url ? [['type' => 'spotify', 'url' => $url]] : [];
 
         case 'core/audio':
             $url = spritz_block_url($wp_block);
