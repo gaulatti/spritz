@@ -13,7 +13,8 @@ $allowed = [
 $request_path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 
 if ($request_path === '/' || $request_path === '') {
-    wp_safe_redirect('https://www.modoitaliano.fm/', 301);
+    status_header(301);
+    header('Location: https://www.modoitaliano.fm/', true, 301);
     exit;
 }
 
