@@ -8,11 +8,15 @@
  */
 
 add_action('init', 'spritz_configure_oidc', 100);
+add_action('admin_init', 'spritz_restrict_admin_to_content_users');
 
 function spritz_configure_oidc() {
+    if (!function_exists('is_blog_installed') || !is_blog_installed()) {
+        return;
+    }
+
     $client_id = defined('GOOGLE_CLIENT_ID') ? GOOGLE_CLIENT_ID : getenv('GOOGLE_CLIENT_ID');
     $client_secret = defined('GOOGLE_CLIENT_SECRET') ? GOOGLE_CLIENT_SECRET : getenv('GOOGLE_CLIENT_SECRET');
-    $allowed_domain = defined('GOOGLE_ALLOWED_DOMAIN') ? GOOGLE_ALLOWED_DOMAIN : getenv('GOOGLE_ALLOWED_DOMAIN');
 
     if (!$client_id || !$client_secret) return;
 
@@ -41,53 +45,28 @@ function spritz_configure_oidc() {
         'alternate_redirect_uri' => false,
     ]);
 
-    if ($allowed_domain) {
-        add_filter('openid-connect-generic-auth-url', function ($url) {
-            return add_query_arg('hd', GOOGLE_ALLOWED_DOMAIN, $url);
-        });
-    }
-
-    add_action('openid-connect-generic-user-create', function ($user, $user_claim) use ($allowed_domain) {
-        if ($allowed_domain) {
-            $domain = strtolower(trim($allowed_domain));
-            $email_domain = strtolower(trim(substr(strrchr($user_claim->email, '@'), 1)));
-            if ($email_domain !== $domain) {
-                wp_die('Access restricted to @' . esc_html($domain) . ' accounts.');
-            }
-        }
+    add_action('openid-connect-generic-user-create', function ($user, $user_claim) {
         if (!empty($user_claim->email)) {
             wp_update_user([
                 'ID'         => $user->ID,
                 'user_email' => sanitize_email($user_claim->email),
             ]);
         }
+
+        if (empty($user->roles)) {
+            $user->set_role('subscriber');
+        }
     }, 10, 2);
 }
 
-add_action('login_enqueue_scripts', 'spritz_oidc_login_button');
-add_action('login_form', 'spritz_oidc_login_button');
+function spritz_restrict_admin_to_content_users() {
+    if (
+        wp_doing_ajax()
+        || !is_user_logged_in()
+        || current_user_can('edit_posts')
+    ) {
+        return;
+    }
 
-function spritz_oidc_login_button() {
-    $client_id = defined('GOOGLE_CLIENT_ID') ? GOOGLE_CLIENT_ID : getenv('GOOGLE_CLIENT_ID');
-    if (!$client_id) return;
-
-    $provider_url = 'https://accounts.google.com/o/oauth2/v2/auth';
-    $site_url = get_site_url();
-    $redirect = $site_url . '/wp-admin/admin-ajax.php?action=openid-connect-authorize';
-    $state = wp_create_nonce('openid-connect-generic');
-
-    $url = add_query_arg([
-        'response_type' => 'code',
-        'client_id'     => $client_id,
-        'redirect_uri'  => $redirect,
-        'scope'         => 'openid email profile',
-        'state'         => $state,
-        'nonce'         => $state,
-    ], $provider_url);
-
-    echo '<div style="text-align:center;margin:20px 0;">';
-    echo '<a href="' . esc_url($url) . '" class="button button-primary button-large" style="background:#4285f4;border-color:#4285f4;color:#fff;padding:10px 24px;font-size:16px;text-decoration:none;display:inline-block;">';
-    echo 'Sign in with Google';
-    echo '</a>';
-    echo '</div>';
+    wp_die('Your account can sign in, but it does not have CMS access yet. Ask an administrator to update your WordPress role.');
 }
