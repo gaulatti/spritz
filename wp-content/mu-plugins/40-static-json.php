@@ -127,6 +127,16 @@ function spritz_static_json_languages(): array {
     return apply_filters('spritz_static_json_languages', ['en', 'es', 'it']);
 }
 
+if (!function_exists('spritz_iso_datetime')) {
+    function spritz_iso_datetime($timestamp = null): string {
+        if (!$timestamp) {
+            $timestamp = time();
+        }
+
+        return gmdate('Y-m-d\TH:i:s\Z', $timestamp);
+    }
+}
+
 function spritz_static_json_response_data($callback, array $params): ?array {
     $request = new WP_REST_Request('GET');
     foreach ($params as $key => $value) {
@@ -215,11 +225,11 @@ function spritz_get_homepage_json(WP_REST_Request $request) {
     $hero = spritz_get_active_hero($lang);
 
     $payload = [
-        'generatedAt' => gmdate('c'),
+        'generatedAt' => spritz_iso_datetime(),
         'page' => $homepage_post ? [
             'title'     => $homepage_post->post_title,
             'excerpt'   => $homepage_post->post_excerpt,
-            'updatedAt' => gmdate('c', strtotime($homepage_post->post_modified_gmt)),
+            'updatedAt' => spritz_iso_datetime(strtotime($homepage_post->post_modified_gmt)),
             'meta'      => ['description' => $homepage_post->post_excerpt],
         ] : null,
         'categories' => $categories,
@@ -265,12 +275,12 @@ function spritz_get_category_json(WP_REST_Request $request) {
     }
 
     $payload = [
-        'generatedAt' => gmdate('c'),
+        'generatedAt' => spritz_iso_datetime(),
         'category' => [
             'name'        => $cat->name,
             'slug'        => $cat->slug,
             'description' => $cat->description,
-            'updatedAt'   => gmdate('c'),
+            'updatedAt'   => spritz_iso_datetime(),
         ],
         'categories' => spritz_get_all_categories_for_json(),
         'articles'   => $articles,
@@ -328,7 +338,7 @@ function spritz_get_inventory_json(WP_REST_Request $request) {
     }
 
     return rest_ensure_response([
-        'generatedAt' => gmdate('c'),
+        'generatedAt' => spritz_iso_datetime(),
         'locales' => ['en', 'es', 'it'],
         'documents' => $documents,
     ]);
@@ -345,7 +355,7 @@ function spritz_get_hero_json(WP_REST_Request $request) {
     }
 
     return rest_ensure_response([
-        'generatedAt' => gmdate('c'),
+        'generatedAt' => spritz_iso_datetime(),
         'locale' => $lang,
         'hero' => spritz_build_article_payload($hero),
     ]);
@@ -355,22 +365,22 @@ function spritz_get_hero_json(WP_REST_Request $request) {
 function spritz_build_article_payload(WP_Post $post): array {
     $categories = spritz_get_categories($post->ID);
     $featured_image = spritz_get_featured_image($post->ID);
-    $now = gmdate('c');
+    $now = spritz_iso_datetime();
     $lang = spritz_get_post_language($post->ID);
     $slug = '/' . ltrim(get_post_field('post_name', $post), '/');
     $cat_slug = !empty($categories) ? $categories[0]['slug'] : 'news';
 
     $full_slug = strpos($slug, '/' . $cat_slug) === 0 ? $slug : '/' . $cat_slug . $slug;
 
-    return [
+    $payload = [
         'id'             => (string) $post->ID,
         'slug'           => $full_slug,
         'url'            => $full_slug,
         'layout'         => 'article-page',
         'canonicalUrl'   => get_site_url() . $full_slug,
         'contentVersion' => $now,
-        'publishedAt'    => gmdate('c', strtotime($post->post_date_gmt)),
-        'updatedAt'      => gmdate('c', strtotime($post->post_modified_gmt)),
+        'publishedAt'    => spritz_iso_datetime(strtotime($post->post_date_gmt)),
+        'updatedAt'      => spritz_iso_datetime(strtotime($post->post_modified_gmt)),
         'status'         => 'published',
         'title'          => get_the_title($post),
         'excerpt'        => get_the_excerpt($post) ?: '',
@@ -390,6 +400,12 @@ function spritz_build_article_payload(WP_Post $post): array {
         ],
         'articles' => [],
     ];
+
+    if (!$featured_image) {
+        unset($payload['featuredImage']);
+    }
+
+    return $payload;
 }
 
 function spritz_build_article_reference(WP_Post $post, string $lang): array {
@@ -399,7 +415,7 @@ function spritz_build_article_reference(WP_Post $post, string $lang): array {
     $slug = '/' . ltrim(get_post_field('post_name', $post), '/');
     $url = '/' . $cat_slug . $slug;
 
-    return [
+    $reference = [
         'id'      => (string) $post->ID,
         'url'     => $url,
         'title'   => get_the_title($post),
@@ -407,10 +423,16 @@ function spritz_build_article_reference(WP_Post $post, string $lang): array {
         'featured' => has_term('featured', 'post_tag', $post->ID),
         'categories' => $cats,
         'featuredImage' => $image,
-        'updatedAt'   => gmdate('c', strtotime($post->post_modified_gmt)),
-        'publishedAt' => gmdate('c', strtotime($post->post_date_gmt)),
+        'updatedAt'   => spritz_iso_datetime(strtotime($post->post_modified_gmt)),
+        'publishedAt' => spritz_iso_datetime(strtotime($post->post_date_gmt)),
         'time' => '',
     ];
+
+    if (!$image) {
+        unset($reference['featuredImage']);
+    }
+
+    return $reference;
 }
 
 function spritz_get_all_categories_for_json(): array {

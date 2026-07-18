@@ -88,7 +88,7 @@ function spritz_build_canonical_article($post): array {
     $featured_image = spritz_get_featured_image($post->ID);
     $body = spritz_get_body($post);
     $authors = spritz_get_authors($post);
-    $now = gmdate('c');
+    $now = spritz_iso_datetime();
 
     $slug = '/' . ltrim(get_post_field('post_name', $post), '/');
     $cat_slug = !empty($categories) ? $categories[0]['slug'] : 'news';
@@ -100,15 +100,15 @@ function spritz_build_canonical_article($post): array {
 
     $site_url = get_site_url();
 
-    return [
+    $payload = [
         'id'             => (string) $post->ID,
         'slug'           => $full_slug,
         'url'            => $full_slug,
         'layout'         => 'article-page',
         'canonicalUrl'   => $site_url . $full_slug,
         'contentVersion' => $now,
-        'publishedAt'    => gmdate('c', strtotime($post->post_date_gmt)),
-        'updatedAt'      => gmdate('c', strtotime($post->post_modified_gmt)),
+        'publishedAt'    => spritz_iso_datetime(strtotime($post->post_date_gmt)),
+        'updatedAt'      => spritz_iso_datetime(strtotime($post->post_modified_gmt)),
         'status'         => 'published',
         'title'          => get_the_title($post),
         'excerpt'        => get_the_excerpt($post) ?: '',
@@ -128,6 +128,20 @@ function spritz_build_canonical_article($post): array {
         ],
         'articles' => [],
     ];
+
+    if (!$featured_image) {
+        unset($payload['featuredImage']);
+    }
+
+    return $payload;
+}
+
+function spritz_iso_datetime($timestamp = null): string {
+    if (!$timestamp) {
+        $timestamp = time();
+    }
+
+    return gmdate('Y-m-d\TH:i:s\Z', $timestamp);
 }
 
 function spritz_get_post_language($post_id): string {
