@@ -106,10 +106,18 @@ function spritz_s3_put_file($local_path, $key) {
             return;
         }
 
-        $client = new S3Client([
+        $client_config = [
             'version' => 'latest',
             'region' => getenv('AWS_REGION') ?: 'us-east-1',
-        ]);
+        ];
+
+        $credentials_file = getenv('AWS_SHARED_CREDENTIALS_FILE') ?: '/root/.aws/credentials';
+        if (is_readable($credentials_file)) {
+            $client_config['profile'] = getenv('AWS_PROFILE') ?: 'default';
+            putenv('AWS_SHARED_CREDENTIALS_FILE=' . $credentials_file);
+        }
+
+        $client = new S3Client($client_config);
     }
 
     try {

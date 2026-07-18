@@ -54,6 +54,7 @@ jobs:
             docker run -d --name spritz \
             -p ${{ env.HTTP_PORT }}:80 \
             -e AWS_REGION=us-east-1 \
+            -e AWS_SHARED_CREDENTIALS_FILE=/root/.aws/credentials \
             -e APP_SECRET_ARN="${{ secrets.APP_SECRET_ARN }}" \
             -e APP_SECRET_KEY="${{ secrets.APP_SECRET_KEY }}" \
             -e ENV=production \
