@@ -7,7 +7,7 @@ services:
       APP_SECRET_ARN: ${APP_SECRET_ARN:-}
       APP_SECRET_KEY: ${APP_SECRET_KEY:-}
       AWS_REGION: ${AWS_REGION:-us-east-1}
-      AWS_SHARED_CREDENTIALS_FILE: /root/.aws/credentials
+      AWS_SHARED_CREDENTIALS_FILE: /var/www/.aws/credentials
       DB_HOST: ${DB_HOST:-}
       DB_NAME: ${DB_NAME:-}
       DB_USER: ${DB_USER:-}

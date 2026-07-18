@@ -111,7 +111,7 @@ function spritz_s3_put_file($local_path, $key) {
             'region' => getenv('AWS_REGION') ?: 'us-east-1',
         ];
 
-        $credentials_file = getenv('AWS_SHARED_CREDENTIALS_FILE') ?: '/root/.aws/credentials';
+        $credentials_file = getenv('AWS_SHARED_CREDENTIALS_FILE') ?: '/var/www/.aws/credentials';
         if (is_readable($credentials_file)) {
             $client_config['profile'] = getenv('AWS_PROFILE') ?: 'default';
             putenv('AWS_SHARED_CREDENTIALS_FILE=' . $credentials_file);

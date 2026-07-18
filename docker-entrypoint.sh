@@ -17,6 +17,21 @@ fi
 : "${ADMIN_PASSWORD:=admin}"
 : "${ADMIN_EMAIL:=admin@example.com}"
 
+if [ -r /root/.aws/credentials ]; then
+  mkdir -p /var/www/.aws
+  cp /root/.aws/credentials /var/www/.aws/credentials
+  if [ -r /root/.aws/config ]; then
+    cp /root/.aws/config /var/www/.aws/config
+    chown www-data:www-data /var/www/.aws/config
+    chmod 600 /var/www/.aws/config
+    export AWS_CONFIG_FILE=/var/www/.aws/config
+  fi
+  chown www-data:www-data /var/www/.aws /var/www/.aws/credentials
+  chmod 700 /var/www/.aws
+  chmod 600 /var/www/.aws/credentials
+  export AWS_SHARED_CREDENTIALS_FILE=/var/www/.aws/credentials
+fi
+
 mkdir -p /var/www/html/wordpress/wp-content/uploads
 chown -R www-data:www-data /var/www/html/wordpress/wp-content/uploads
 
