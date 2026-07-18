@@ -18,14 +18,12 @@ add_action('init', function () {
 
     register_block_pattern('spritz/instagram-embed', [
         'title'       => __('Instagram Embed', 'spritz'),
-        'description' => __('Insert an Instagram post URL for Cronkite rendering.', 'spritz'),
+        'description' => __('Insert an Instagram post URL for Cronkite rendering without relying on WordPress oEmbed preview.', 'spritz'),
         'categories'  => ['spritz-embeds'],
         'content'     => <<<HTML
-<!-- wp:embed {"url":"https://www.instagram.com/p/POST_ID/","type":"rich","providerNameSlug":"instagram","responsive":true,"className":"wp-embed-aspect-1-1 wp-has-aspect-ratio"} -->
-<figure class="wp-block-embed is-type-rich is-provider-instagram wp-block-embed-instagram wp-embed-aspect-1-1 wp-has-aspect-ratio"><div class="wp-block-embed__wrapper">
-https://www.instagram.com/p/POST_ID/
-</div></figure>
-<!-- /wp:embed -->
+<!-- wp:paragraph -->
+<p>[spritz-instagram url="https://www.instagram.com/p/POST_ID/"]</p>
+<!-- /wp:paragraph -->
 HTML,
     ]);
 });

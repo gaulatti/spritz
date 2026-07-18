@@ -293,9 +293,19 @@ function spritz_map_wp_block_to_canonical(array $wp_block): array {
 
     switch ($name) {
         case 'core/paragraph':
+            $url = spritz_instagram_url_from_shortcode(spritz_render_wp_block($wp_block));
+            if ($url !== '') {
+                return [['type' => 'instagram', 'url' => $url]];
+            }
+
         case 'core/freeform':
         case 'core/html':
         case 'core/table':
+            $url = spritz_instagram_url_from_shortcode(spritz_render_wp_block($wp_block));
+            if ($url !== '') {
+                return [['type' => 'instagram', 'url' => $url]];
+            }
+
             return spritz_rich_text_blocks(spritz_render_wp_block($wp_block));
 
         case 'core/heading':
@@ -546,6 +556,16 @@ function spritz_youtube_video_id($url): string {
     }
 
     return '';
+}
+
+function spritz_instagram_url_from_shortcode($html): string {
+    $html = (string) $html;
+    if (!preg_match('/\[spritz-instagram\s+url=["\']([^"\']+)["\']\s*\]/i', $html, $matches)) {
+        return '';
+    }
+
+    $url = esc_url_raw(html_entity_decode($matches[1], ENT_QUOTES));
+    return str_contains($url, 'instagram.com') ? $url : '';
 }
 
 function spritz_rewrite_url_to_media_cdn($url): string {
