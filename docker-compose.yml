@@ -1,0 +1,48 @@
+services:
+  wordpress:
+    build: .
+    ports:
+      - "8080:80"
+    environment:
+      APP_SECRET_ARN: ${APP_SECRET_ARN:-}
+      APP_SECRET_KEY: ${APP_SECRET_KEY:-}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      DB_HOST: ${DB_HOST:-}
+      DB_NAME: ${DB_NAME:-}
+      DB_USER: ${DB_USER:-}
+      DB_PASSWORD: ${DB_PASSWORD:-}
+      WP_HOME: ${WP_HOME:-}
+      WP_SITEURL: ${WP_SITEURL:-}
+      WP_TITLE: ${WP_TITLE:-}
+      WP_DEBUG: ${WP_DEBUG:-}
+      ADMIN_USER: ${ADMIN_USER:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      WORDPRESS_CONFIG_EXTRA: ${WORDPRESS_CONFIG_EXTRA:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ~/.aws:/root/.aws:ro
+      - wp-uploads:/var/www/html/wordpress/wp-content/uploads
+
+  db:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${DB_NAME:-wordpress}
+      MYSQL_USER: ${DB_USER:-wordpress}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-secret}
+    ports:
+      - "3306:3306"
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  wp-uploads:
+  db-data:

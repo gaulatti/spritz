@@ -1,0 +1,4 @@
+.env
+wordpress/
+vendor/
+wp-content/uploads/
