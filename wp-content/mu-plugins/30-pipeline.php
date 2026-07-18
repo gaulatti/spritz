@@ -59,7 +59,7 @@ function spritz_trigger_social_delivery($post, $article_payload, $cronkite_url, 
         'urls' => $urls,
         'article' => [
             'title'            => get_the_title($post),
-            'excerpt'          => get_the_excerpt($post) ?: '',
+            'excerpt'          => spritz_get_excerpt($post),
             'imageUrl'         => $article_payload['featuredImage']['url'] ?? '',
             'postToTwitter'    => true,
             'postToInstagram'  => true,
@@ -86,9 +86,11 @@ function spritz_build_canonical_article($post): array {
     $lang = spritz_get_post_language($post->ID);
     $categories = spritz_get_categories($post->ID);
     $featured_image = spritz_get_featured_image($post->ID);
-    $body = spritz_get_body($post);
+    $body_and_excerpt = spritz_get_body_and_excerpt($post);
+    $body = $body_and_excerpt['body'];
     $authors = spritz_get_authors($post);
     $now = spritz_iso_datetime();
+    $excerpt = $body_and_excerpt['excerpt'];
 
     $slug = '/' . ltrim(get_post_field('post_name', $post), '/');
     $cat_slug = !empty($categories) ? $categories[0]['slug'] : 'news';
@@ -111,7 +113,7 @@ function spritz_build_canonical_article($post): array {
         'updatedAt'      => spritz_iso_datetime(strtotime($post->post_modified_gmt)),
         'status'         => 'published',
         'title'          => get_the_title($post),
-        'excerpt'        => get_the_excerpt($post) ?: '',
+        'excerpt'        => $excerpt,
         'language'       => $lang,
         'featured'       => has_term('featured', 'post_tag', $post->ID),
         'authors'        => $authors,
@@ -120,7 +122,7 @@ function spritz_build_canonical_article($post): array {
         'body'           => $body,
         'seo'            => [
             'metaTitle'       => get_the_title($post),
-            'metaDescription' => get_the_excerpt($post) ?: '',
+            'metaDescription' => $excerpt,
             'ogImage'         => $featured_image['url'] ?? '',
         ],
         'navigation' => [
@@ -142,6 +144,52 @@ function spritz_iso_datetime($timestamp = null): string {
     }
 
     return gmdate('Y-m-d\TH:i:s\Z', $timestamp);
+}
+
+function spritz_get_manual_excerpt($post): string {
+    $post = get_post($post);
+    if (!$post) return '';
+
+    return trim(wp_strip_all_tags((string) $post->post_excerpt));
+}
+
+function spritz_get_excerpt($post): string {
+    $manual = spritz_get_manual_excerpt($post);
+    if ($manual !== '') return $manual;
+
+    foreach (spritz_get_body($post) as $block) {
+        $excerpt = spritz_excerpt_from_block($block);
+        if ($excerpt !== '') return $excerpt;
+    }
+
+    return '';
+}
+
+function spritz_get_body_and_excerpt($post): array {
+    $body = spritz_get_body($post);
+    $manual = spritz_get_manual_excerpt($post);
+    if ($manual !== '') {
+        return ['body' => $body, 'excerpt' => $manual];
+    }
+
+    foreach ($body as $index => $block) {
+        $excerpt = spritz_excerpt_from_block($block);
+        if ($excerpt === '') continue;
+
+        unset($body[$index]);
+        return ['body' => array_values($body), 'excerpt' => $excerpt];
+    }
+
+    return ['body' => $body, 'excerpt' => ''];
+}
+
+function spritz_excerpt_from_block(array $block): string {
+    if (($block['type'] ?? '') !== 'richText') return '';
+
+    $text = trim(preg_replace('/\s+/', ' ', wp_strip_all_tags((string) ($block['html'] ?? ''))));
+    if ($text === '') return '';
+
+    return wp_trim_words($text, 55, '');
 }
 
 function spritz_get_post_language($post_id): string {

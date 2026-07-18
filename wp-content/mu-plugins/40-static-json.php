@@ -137,6 +137,60 @@ if (!function_exists('spritz_iso_datetime')) {
     }
 }
 
+if (!function_exists('spritz_get_manual_excerpt')) {
+    function spritz_get_manual_excerpt($post): string {
+        $post = get_post($post);
+        if (!$post) return '';
+
+        return trim(wp_strip_all_tags((string) $post->post_excerpt));
+    }
+}
+
+if (!function_exists('spritz_get_excerpt')) {
+    function spritz_get_excerpt($post): string {
+        $manual = spritz_get_manual_excerpt($post);
+        if ($manual !== '') return $manual;
+
+        foreach (spritz_get_body($post) as $block) {
+            $excerpt = spritz_excerpt_from_block($block);
+            if ($excerpt !== '') return $excerpt;
+        }
+
+        return '';
+    }
+}
+
+if (!function_exists('spritz_get_body_and_excerpt')) {
+    function spritz_get_body_and_excerpt($post): array {
+        $body = spritz_get_body($post);
+        $manual = spritz_get_manual_excerpt($post);
+        if ($manual !== '') {
+            return ['body' => $body, 'excerpt' => $manual];
+        }
+
+        foreach ($body as $index => $block) {
+            $excerpt = spritz_excerpt_from_block($block);
+            if ($excerpt === '') continue;
+
+            unset($body[$index]);
+            return ['body' => array_values($body), 'excerpt' => $excerpt];
+        }
+
+        return ['body' => $body, 'excerpt' => ''];
+    }
+}
+
+if (!function_exists('spritz_excerpt_from_block')) {
+    function spritz_excerpt_from_block(array $block): string {
+        if (($block['type'] ?? '') !== 'richText') return '';
+
+        $text = trim(preg_replace('/\s+/', ' ', wp_strip_all_tags((string) ($block['html'] ?? ''))));
+        if ($text === '') return '';
+
+        return wp_trim_words($text, 55, '');
+    }
+}
+
 function spritz_static_json_response_data($callback, array $params): ?array {
     $request = new WP_REST_Request('GET');
     foreach ($params as $key => $value) {
@@ -367,6 +421,8 @@ function spritz_build_article_payload(WP_Post $post): array {
     $featured_image = spritz_get_featured_image($post->ID);
     $now = spritz_iso_datetime();
     $lang = spritz_get_post_language($post->ID);
+    $body_and_excerpt = spritz_get_body_and_excerpt($post);
+    $excerpt = $body_and_excerpt['excerpt'];
     $slug = '/' . ltrim(get_post_field('post_name', $post), '/');
     $cat_slug = !empty($categories) ? $categories[0]['slug'] : 'news';
 
@@ -383,16 +439,16 @@ function spritz_build_article_payload(WP_Post $post): array {
         'updatedAt'      => spritz_iso_datetime(strtotime($post->post_modified_gmt)),
         'status'         => 'published',
         'title'          => get_the_title($post),
-        'excerpt'        => get_the_excerpt($post) ?: '',
+        'excerpt'        => $excerpt,
         'language'       => $lang,
         'featured'       => has_term('featured', 'post_tag', $post->ID),
         'authors'        => spritz_get_authors($post),
         'categories'     => $categories,
         'featuredImage'  => $featured_image,
-        'body'           => spritz_get_body($post),
+        'body'           => $body_and_excerpt['body'],
         'seo'            => [
             'metaTitle'       => get_the_title($post),
-            'metaDescription' => get_the_excerpt($post) ?: '',
+            'metaDescription' => $excerpt,
             'ogImage'         => $featured_image['url'] ?? '',
         ],
         'navigation' => [
@@ -419,7 +475,7 @@ function spritz_build_article_reference(WP_Post $post, string $lang): array {
         'id'      => (string) $post->ID,
         'url'     => $url,
         'title'   => get_the_title($post),
-        'excerpt' => get_the_excerpt($post) ?: '',
+        'excerpt' => spritz_get_excerpt($post),
         'featured' => has_term('featured', 'post_tag', $post->ID),
         'categories' => $cats,
         'featuredImage' => $image,
@@ -500,7 +556,7 @@ function spritz_get_active_hero(string $lang): array {
         'heroSlides'     => [$image],
         'heroTitle'      => get_the_title($hero),
         'heroSlug'       => $slug,
-        'heroExcerpt'    => get_the_excerpt($hero) ?: '',
+        'heroExcerpt'    => spritz_get_excerpt($hero),
         'heroCategories' => $cats,
         'heroRelated'    => $related_refs,
         'heroLayout'     => 'spotlight',
