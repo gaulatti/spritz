@@ -44,7 +44,7 @@ done
 echo "MySQL is ready"
 
 # Auto-install WordPress if not already installed
-if ! wp core is-installed --path=/var/www/html/wordpress 2>/dev/null; then
+if ! wp core is-installed --allow-root --path=/var/www/html/wordpress 2>/dev/null; then
   echo "Installing WordPress..."
   wp core install \
     --url="$WP_HOME" \
@@ -53,6 +53,7 @@ if ! wp core is-installed --path=/var/www/html/wordpress 2>/dev/null; then
     --admin_password="$ADMIN_PASSWORD" \
     --admin_email="$ADMIN_EMAIL" \
     --skip-email \
+    --allow-root \
     --path=/var/www/html/wordpress
 
   # Activate plugins
@@ -61,11 +62,13 @@ if ! wp core is-installed --path=/var/www/html/wordpress 2>/dev/null; then
     advanced-custom-fields \
     amazon-s3-and-cloudfront \
     daggerhart-openid-connect-generic \
+    --allow-root \
     --path=/var/www/html/wordpress 2>/dev/null || true
 
   # Activate theme
   echo "Activating theme..."
   wp theme activate headless-placeholder \
+    --allow-root \
     --path=/var/www/html/wordpress 2>/dev/null || true
 
   echo "WordPress installed"
