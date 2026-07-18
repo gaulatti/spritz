@@ -23,6 +23,17 @@ define('WP_SITEURL', getenv('WP_SITEURL') ?: 'http://localhost:8080');
 define('FS_METHOD', 'direct');
 define('WP_DEBUG', filter_var(getenv('WP_DEBUG') ?: false, FILTER_VALIDATE_BOOLEAN));
 
+if (
+    isset($_SERVER['HTTP_X_FORWARDED_PROTO'])
+    && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https'
+) {
+    $_SERVER['HTTPS'] = 'on';
+}
+
+if (!defined('FORCE_SSL_ADMIN')) {
+    define('FORCE_SSL_ADMIN', true);
+}
+
 $salt_keys = [
     'AUTH_KEY',
     'SECURE_AUTH_KEY',
