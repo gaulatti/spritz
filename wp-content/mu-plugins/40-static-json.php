@@ -78,7 +78,7 @@ function spritz_publish_static_json_to_s3($post_id, $post, $update) {
         $homepage = spritz_static_json_response_data('spritz_get_homepage_json', ['lang' => $lang]);
         if ($homepage !== null) {
             $timestamp = (int) floor(microtime(true) * 1000);
-            spritz_write_static_json('', 'homepage-current-' . $lang . '.json', $homepage);
+            spritz_write_static_json('', 'homepage-current-' . $lang . '.json', $homepage, 'no-store');
             spritz_write_static_json('', 'homepage-' . $timestamp . '-' . $lang . '.json', $homepage);
             error_log(sprintf(
                 'Homepage JSON generated: language=%s articles=%d categories=%d files=homepage-current-%s.json,homepage-%s-%s.json',
@@ -99,7 +99,7 @@ function spritz_publish_static_json_to_s3($post_id, $post, $update) {
 
             if ($category === null) continue;
 
-            spritz_write_static_json('', $category_slug . '-current-' . $lang . '.json', $category);
+            spritz_write_static_json('', $category_slug . '-current-' . $lang . '.json', $category, 'no-store');
             error_log(sprintf(
                 'Category JSON generated: category=%s language=%s articles=%d',
                 $category_slug,
@@ -112,12 +112,12 @@ function spritz_publish_static_json_to_s3($post_id, $post, $update) {
     $article_payload = spritz_build_article_payload($post);
     $article_slug = '/' . ltrim((string) ($article_payload['slug'] ?? ''), '/');
     if ($article_slug !== '/') {
-        spritz_write_static_json('json/articles', ltrim($article_slug, '/') . '.json', $article_payload);
+        spritz_write_static_json('json/articles', ltrim($article_slug, '/') . '.json', $article_payload, 'no-store');
     }
 
     $inventory = spritz_static_json_response_data('spritz_get_inventory_json', []);
     if ($inventory !== null) {
-        spritz_write_static_json('', 'cronkite-inventory.json', $inventory);
+        spritz_write_static_json('', 'cronkite-inventory.json', $inventory, 'no-store');
     }
 
     error_log(sprintf('Spritz static JSON hook complete: post=%s', (string) $post_id));
@@ -208,7 +208,7 @@ function spritz_static_json_response_data($callback, array $params): ?array {
     return is_array($data) ? $data : null;
 }
 
-function spritz_write_static_json($collection_slug, $filename, $payload): void {
+function spritz_write_static_json($collection_slug, $filename, $payload, $cache_control = 'public, max-age=60, stale-while-revalidate=300'): void {
     $collection_slug = trim((string) $collection_slug, '/');
     $filename = ltrim((string) $filename, '/');
     $key = 'content/' . ($collection_slug ? $collection_slug . '/' : '') . $filename;
@@ -218,7 +218,7 @@ function spritz_write_static_json($collection_slug, $filename, $payload): void {
         $key,
         $body,
         'application/json',
-        'public, max-age=60, stale-while-revalidate=300'
+        $cache_control
     );
 
     if ($uploaded) {
@@ -495,13 +495,16 @@ function spritz_get_all_categories_for_json(): array {
     $cats = get_categories(['hide_empty' => false]);
     $result = [];
     foreach ($cats as $cat) {
+        if ($cat->slug === 'uncategorized') continue;
         $result[] = ['name' => $cat->name, 'slug' => $cat->slug];
     }
     return $result;
 }
 
 function spritz_get_all_categories_slugs(): array {
-    return get_categories(['hide_empty' => false, 'fields' => 'slugs']);
+    return array_values(array_filter(get_categories(['hide_empty' => false, 'fields' => 'slugs']), function ($slug) {
+        return $slug !== 'uncategorized';
+    }));
 }
 
 function spritz_get_homepage_post_id(): ?int {
@@ -567,6 +570,12 @@ function spritz_get_active_hero(string $lang): array {
 if (!function_exists('spritz_get_categories')) {
     function spritz_get_categories($post_id): array {
         $cats = wp_get_post_categories($post_id, ['fields' => 'all']);
+        if (count($cats) > 1) {
+            $cats = array_values(array_filter($cats, function ($cat) {
+                return $cat->slug !== 'uncategorized';
+            }));
+        }
+
         $result = [];
         foreach ($cats as $cat) {
             $result[] = ['name' => $cat->name, 'slug' => $cat->slug];

@@ -206,6 +206,12 @@ function spritz_get_post_language($post_id): string {
 
 function spritz_get_categories($post_id): array {
     $cats = wp_get_post_categories($post_id, ['fields' => 'all']);
+    if (count($cats) > 1) {
+        $cats = array_values(array_filter($cats, function ($cat) {
+            return $cat->slug !== 'uncategorized';
+        }));
+    }
+
     $result = [];
     foreach ($cats as $cat) {
         $result[] = [
@@ -220,6 +226,7 @@ function spritz_get_all_categories(): array {
     $cats = get_categories(['hide_empty' => false]);
     $result = [];
     foreach ($cats as $cat) {
+        if ($cat->slug === 'uncategorized') continue;
         $result[] = ['name' => $cat->name, 'slug' => $cat->slug];
     }
     return $result;
