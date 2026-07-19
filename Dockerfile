@@ -5,9 +5,19 @@ RUN apk add --no-cache \
     supervisor \
     bash \
     mysql-client \
-    curl
+    curl \
+    freetype-dev \
+    libavif-dev \
+    libjpeg-turbo-dev \
+    libpng-dev \
+    libwebp-dev
 
-RUN docker-php-ext-install mysqli pdo_mysql
+RUN docker-php-ext-configure gd \
+        --with-avif \
+        --with-freetype \
+        --with-jpeg \
+        --with-webp \
+    && docker-php-ext-install gd mysqli pdo_mysql
 
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
