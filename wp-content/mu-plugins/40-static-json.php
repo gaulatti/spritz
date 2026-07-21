@@ -332,16 +332,7 @@ function spritz_get_homepage_json(WP_REST_Request $request) {
         ] : null,
         'categories' => $categories,
         'articles'   => $articles,
-        'hero'       => $hero['hero'] ?? null,
-        'heroSlides' => $hero['heroSlides'] ?? null,
-        'heroTitle'  => $hero['heroTitle'] ?? null,
-        'heroSlug'   => $hero['heroSlug'] ?? null,
-        'heroExcerpt' => $hero['heroExcerpt'] ?? null,
-        'heroRelated' => $hero['heroRelated'] ?? null,
-        'heroLayout'  => $hero['heroLayout'] ?? null,
-        'heroCategories' => $hero['heroCategories'] ?? null,
         'nowPlaying' => function_exists('spritz_get_now_playing') ? spritz_get_now_playing() : null,
-        'breakingNews' => null,
         'mourningMode' => false,
         'seo' => [
             'metaTitle' => $title,
@@ -352,6 +343,21 @@ function spritz_get_homepage_json(WP_REST_Request $request) {
         ],
         'body' => [],
     ];
+
+    foreach ([
+        'hero',
+        'heroSlides',
+        'heroTitle',
+        'heroSlug',
+        'heroExcerpt',
+        'heroRelated',
+        'heroLayout',
+        'heroCategories',
+    ] as $hero_key) {
+        if (!empty($hero[$hero_key])) {
+            $payload[$hero_key] = $hero[$hero_key];
+        }
+    }
 
     return rest_ensure_response($payload);
 }
