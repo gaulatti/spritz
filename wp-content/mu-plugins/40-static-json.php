@@ -8,7 +8,7 @@
  *   {cdnUrl}{contentPath}/homepage-current-{lang}.json
  *   {cdnUrl}{contentPath}/{category}-current-{lang}.json
  *   {cdnUrl}{contentPath}/json/articles/{slug}.json
- *   {cdnUrl}{contentPath}/cronkite-inventory.json
+ *   {cdnUrl}{contentPath}/inventory.json
  */
 
 add_action('rest_api_init', function () {
@@ -35,7 +35,7 @@ add_action('rest_api_init', function () {
     ]);
 
     // ── Inventory JSON ────────────────────────────────────────────
-    register_rest_route('spritz/v1', '/cronkite-inventory\.json', [
+    register_rest_route('spritz/v1', '/(?P<filename>inventory|cronkite-inventory)\.json', [
         'methods' => 'GET',
         'callback' => 'spritz_get_inventory_json',
         'permission_callback' => '__return_true',
@@ -117,10 +117,15 @@ function spritz_publish_static_json_to_s3($post_id, $post, $update) {
 
     $inventory = spritz_static_json_response_data('spritz_get_inventory_json', []);
     if ($inventory !== null) {
+        spritz_write_static_json('', 'inventory.json', $inventory, 'no-store');
         spritz_write_static_json('', 'cronkite-inventory.json', $inventory, 'no-store');
     }
 
     error_log(sprintf('Spritz static JSON hook complete: post=%s', (string) $post_id));
+}
+
+function spritz_static_json_refresh($post_id, $post, $update = true): void {
+    spritz_publish_static_json_to_s3($post_id, $post, $update);
 }
 
 function spritz_static_json_languages(): array {

@@ -7,6 +7,8 @@ $s3_prefix = defined('S3_UPLOADS_PREFIX') ? S3_UPLOADS_PREFIX : getenv('S3_UPLOA
 $cloudfront = defined('CLOUDFRONT_MEDIA_DOMAIN') ? CLOUDFRONT_MEDIA_DOMAIN : getenv('CLOUDFRONT_MEDIA_DOMAIN');
 $region = getenv('AWS_REGION') ?: 'us-east-1';
 
+spritz_configure_aws_credentials_environment();
+
 if ($s3_bucket && !defined('S3_UPLOADS_BUCKET')) {
     define('S3_UPLOADS_BUCKET', $s3_bucket);
 }
@@ -18,7 +20,7 @@ if ($s3_prefix && !defined('S3_UPLOADS_PREFIX')) {
 if ($s3_bucket && !defined('AS3CF_SETTINGS')) {
     define('AS3CF_SETTINGS', serialize([
         'provider' => 'aws',
-        'use-server-roles' => true,
+        'use-server-roles' => false,
         'bucket' => $s3_bucket,
         'region' => $region,
         'copy-to-s3' => true,
@@ -38,6 +40,53 @@ if ($s3_bucket && !defined('AS3CF_SETTINGS')) {
 
 add_filter('wp_update_attachment_metadata', 'spritz_offload_attachment_to_s3', 120, 2);
 add_filter('wp_get_attachment_url', 'spritz_rewrite_attachment_url_to_cdn', 20, 2);
+
+function spritz_configure_aws_credentials_environment() {
+    $credentials_file = getenv('AWS_SHARED_CREDENTIALS_FILE') ?: '/var/www/.aws/credentials';
+    if (is_readable($credentials_file)) {
+        putenv('AWS_SHARED_CREDENTIALS_FILE=' . $credentials_file);
+        $_ENV['AWS_SHARED_CREDENTIALS_FILE'] = $credentials_file;
+        $_SERVER['AWS_SHARED_CREDENTIALS_FILE'] = $credentials_file;
+
+        spritz_define_as3cf_credentials_from_file($credentials_file);
+    }
+
+    $config_file = getenv('AWS_CONFIG_FILE') ?: '/var/www/.aws/config';
+    if (is_readable($config_file)) {
+        putenv('AWS_CONFIG_FILE=' . $config_file);
+        $_ENV['AWS_CONFIG_FILE'] = $config_file;
+        $_SERVER['AWS_CONFIG_FILE'] = $config_file;
+    }
+
+    putenv('AWS_EC2_METADATA_DISABLED=true');
+    $_ENV['AWS_EC2_METADATA_DISABLED'] = 'true';
+    $_SERVER['AWS_EC2_METADATA_DISABLED'] = 'true';
+}
+
+function spritz_define_as3cf_credentials_from_file($credentials_file) {
+    if (defined('AS3CF_AWS_ACCESS_KEY_ID') && defined('AS3CF_AWS_SECRET_ACCESS_KEY')) {
+        return;
+    }
+
+    $profiles = parse_ini_file($credentials_file, true, INI_SCANNER_RAW);
+    if (!is_array($profiles)) {
+        return;
+    }
+
+    $profile = getenv('AWS_PROFILE') ?: 'default';
+    $credentials = $profiles[$profile] ?? $profiles['default'] ?? null;
+    if (!is_array($credentials)) {
+        return;
+    }
+
+    if (!defined('AS3CF_AWS_ACCESS_KEY_ID') && !empty($credentials['aws_access_key_id'])) {
+        define('AS3CF_AWS_ACCESS_KEY_ID', $credentials['aws_access_key_id']);
+    }
+
+    if (!defined('AS3CF_AWS_SECRET_ACCESS_KEY') && !empty($credentials['aws_secret_access_key'])) {
+        define('AS3CF_AWS_SECRET_ACCESS_KEY', $credentials['aws_secret_access_key']);
+    }
+}
 
 function spritz_offload_attachment_to_s3($metadata, $attachment_id) {
     $bucket = spritz_s3_bucket();
@@ -118,6 +167,8 @@ function spritz_s3_put_object(array $object, $log_key) {
     static $client = null;
 
     if ($client === null) {
+        spritz_configure_aws_credentials_environment();
+
         $autoload = '/var/www/html/vendor/autoload.php';
         if (is_readable($autoload)) {
             require_once $autoload;
@@ -136,7 +187,6 @@ function spritz_s3_put_object(array $object, $log_key) {
         $credentials_file = getenv('AWS_SHARED_CREDENTIALS_FILE') ?: '/var/www/.aws/credentials';
         if (is_readable($credentials_file)) {
             $client_config['profile'] = getenv('AWS_PROFILE') ?: 'default';
-            putenv('AWS_SHARED_CREDENTIALS_FILE=' . $credentials_file);
         }
 
         $client = new S3Client($client_config);
