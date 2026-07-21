@@ -231,6 +231,27 @@ function spritz_write_static_json($collection_slug, $filename, $payload, $cache_
     }
 }
 
+function spritz_localized_route(string $path, string $lang): string {
+    $path = trim($path, '/');
+    $default_language = function_exists('spritz_default_language') ? spritz_default_language() : (getenv('DEFAULT_LANGUAGE') ?: 'es');
+
+    if ($lang !== $default_language) {
+        return '/' . $lang . ($path ? '/' . $path : '');
+    }
+
+    return $path ? '/' . $path : '/';
+}
+
+function spritz_public_site_url(string $path = ''): string {
+    $base = getenv('PUBLIC_SITE_URL') ?: getenv('WP_PUBLIC_SITE_URL') ?: 'https://modoitaliano.fm';
+    return rtrim($base, '/') . spritz_local_path($path);
+}
+
+function spritz_local_path(string $path): string {
+    $path = '/' . ltrim($path, '/');
+    return $path === '//' ? '/' : $path;
+}
+
 function spritz_static_content_url($path): string {
     $path = ltrim((string) $path, '/');
 
@@ -282,14 +303,32 @@ function spritz_get_homepage_json(WP_REST_Request $request) {
     $homepage_post = $homepage_id ? get_post($homepage_id) : null;
 
     $hero = spritz_get_active_hero($lang);
+    $route = spritz_localized_route('', $lang);
+    $title = $homepage_post ? $homepage_post->post_title : get_bloginfo('name');
+    $excerpt = $homepage_post ? spritz_get_excerpt($homepage_post) : get_bloginfo('description');
+    $updated_at = $homepage_post ? spritz_iso_datetime(strtotime($homepage_post->post_modified_gmt)) : spritz_iso_datetime();
 
     $payload = [
         'generatedAt' => spritz_iso_datetime(),
+        'id' => 'homepage-' . $lang,
+        'slug' => $route,
+        'url' => $route,
+        'layout' => 'homepage',
+        'canonicalUrl' => spritz_public_site_url($route),
+        'contentVersion' => $updated_at,
+        'publishedAt' => $updated_at,
+        'updatedAt' => $updated_at,
+        'status' => 'published',
+        'title' => $title,
+        'excerpt' => $excerpt,
+        'language' => $lang,
+        'featured' => true,
+        'authors' => [['name' => 'ModoItaliano', 'slug' => 'modoitaliano']],
         'page' => $homepage_post ? [
-            'title'     => $homepage_post->post_title,
-            'excerpt'   => $homepage_post->post_excerpt,
-            'updatedAt' => spritz_iso_datetime(strtotime($homepage_post->post_modified_gmt)),
-            'meta'      => ['description' => $homepage_post->post_excerpt],
+            'title'     => $title,
+            'excerpt'   => $excerpt,
+            'updatedAt' => $updated_at,
+            'meta'      => ['description' => $excerpt],
         ] : null,
         'categories' => $categories,
         'articles'   => $articles,
@@ -301,8 +340,17 @@ function spritz_get_homepage_json(WP_REST_Request $request) {
         'heroRelated' => $hero['heroRelated'] ?? null,
         'heroLayout'  => $hero['heroLayout'] ?? null,
         'heroCategories' => $hero['heroCategories'] ?? null,
+        'nowPlaying' => function_exists('spritz_get_now_playing') ? spritz_get_now_playing() : null,
         'breakingNews' => null,
         'mourningMode' => false,
+        'seo' => [
+            'metaTitle' => $title,
+            'metaDescription' => $excerpt,
+        ],
+        'navigation' => [
+            'categories' => $categories,
+        ],
+        'body' => [],
     ];
 
     return rest_ensure_response($payload);
@@ -333,17 +381,54 @@ function spritz_get_category_json(WP_REST_Request $request) {
         $articles[] = spritz_build_article_reference($post, $lang);
     }
 
+    $route = spritz_localized_route($cat->slug, $lang);
+    $title = $cat->name;
+    $excerpt = $cat->description ?: 'Latest news in ' . $title;
+    $updated_at = spritz_iso_datetime();
+    $navigation_categories = spritz_get_all_categories_for_json();
+    $featured_image = null;
+    if (!empty($articles[0]['featuredImage']) && is_array($articles[0]['featuredImage'])) {
+        $featured_image = $articles[0]['featuredImage'];
+    }
+
     $payload = [
         'generatedAt' => spritz_iso_datetime(),
+        'id' => 'category-' . $lang . '-' . $cat->slug,
+        'slug' => $route,
+        'url' => $route,
+        'layout' => 'category-page',
+        'canonicalUrl' => spritz_public_site_url($route),
+        'contentVersion' => $updated_at,
+        'publishedAt' => $updated_at,
+        'updatedAt' => $updated_at,
+        'status' => 'published',
+        'title' => $title,
+        'excerpt' => $excerpt,
+        'language' => $lang,
+        'featured' => true,
+        'authors' => [['name' => 'ModoItaliano', 'slug' => 'modoitaliano']],
+        'featuredImage' => $featured_image,
         'category' => [
             'name'        => $cat->name,
             'slug'        => $cat->slug,
             'description' => $cat->description,
-            'updatedAt'   => spritz_iso_datetime(),
+            'updatedAt'   => $updated_at,
         ],
-        'categories' => spritz_get_all_categories_for_json(),
+        'categories' => $navigation_categories,
         'articles'   => $articles,
+        'body' => [],
+        'seo' => [
+            'metaTitle' => $title . ' | ' . get_bloginfo('name'),
+            'metaDescription' => $excerpt,
+        ],
+        'navigation' => [
+            'categories' => $navigation_categories,
+        ],
     ];
+
+    if (!$featured_image) {
+        unset($payload['featuredImage']);
+    }
 
     return rest_ensure_response($payload);
 }
@@ -361,16 +446,17 @@ function spritz_get_inventory_json(WP_REST_Request $request) {
     $documents = [];
     foreach ($posts as $post) {
         $lang = spritz_get_post_language($post->ID);
-        $slug = '/' . ltrim(get_post_field('post_name', $post), '/');
-        $cats = wp_get_post_categories($post->ID, ['fields' => 'slugs']);
-        $cat_prefix = !empty($cats) ? '/' . $cats[0] : '';
-        $url = spritz_static_content_url('json/articles' . $cat_prefix . $slug . '.json');
+        $article_payload = spritz_build_article_payload($post);
+        $route = '/' . ltrim((string) ($article_payload['slug'] ?? ''), '/');
+        $url = spritz_static_content_url('json/articles' . $route . '.json');
 
         $documents[] = [
             'type'     => 'article',
             'locale'   => $lang,
             'language' => $lang,
-            'slug'     => $slug,
+            'layout'   => 'article-page',
+            'slug'     => $route,
+            'route'    => $route,
             'url'      => $url,
         ];
     }
@@ -382,7 +468,10 @@ function spritz_get_inventory_json(WP_REST_Request $request) {
             $documents[] = [
                 'type'     => 'category',
                 'locale'   => $lang,
-                'slug'     => $cat_slug,
+                'language' => $lang,
+                'layout'   => 'category-page',
+                'slug'     => spritz_localized_route($cat_slug, $lang),
+                'route'    => spritz_localized_route($cat_slug, $lang),
                 'url'      => spritz_static_content_url($cat_slug . '-current-' . $lang . '.json'),
             ];
         }
@@ -392,6 +481,10 @@ function spritz_get_inventory_json(WP_REST_Request $request) {
         $documents[] = [
             'type'     => 'homepage',
             'locale'   => $lang,
+            'language' => $lang,
+            'layout'   => 'homepage',
+            'slug'     => spritz_localized_route('', $lang),
+            'route'    => spritz_localized_route('', $lang),
             'url'      => spritz_static_content_url('homepage-current-' . $lang . '.json'),
         ];
     }

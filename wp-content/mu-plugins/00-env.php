@@ -11,6 +11,7 @@ $env_keys = [
     'CRONKITE_URL',
     'CRONKITE_TENANT_SLUG',
     'PIPELINE_TOKEN',
+    'NOW_PLAYING_TOKEN',
     'DEFAULT_LANGUAGE',
 ];
 

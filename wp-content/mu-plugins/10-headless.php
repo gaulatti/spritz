@@ -8,6 +8,7 @@ $allowed = [
     '/wp-admin',
     '/wp-login.php',
     '/wp-cron.php',
+    '/wp-json',
 ];
 
 $request_path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
