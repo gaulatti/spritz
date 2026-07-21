@@ -103,7 +103,7 @@ function spritz_build_canonical_article($post): array {
     $site_url = get_site_url();
 
     $payload = [
-        'id'             => (string) $post->ID,
+        'id'             => spritz_post_uuid($post),
         'slug'           => $full_slug,
         'url'            => $full_slug,
         'layout'         => 'article-page',
@@ -215,11 +215,12 @@ function spritz_get_categories($post_id): array {
     $result = [];
     foreach ($cats as $cat) {
         $result[] = [
+            'id' => spritz_term_uuid($cat),
             'name' => $cat->name,
             'slug' => $cat->slug,
         ];
     }
-    return !empty($result) ? $result : [['name' => 'News', 'slug' => 'news']];
+    return !empty($result) ? $result : [['id' => spritz_default_category_uuid(), 'name' => 'News', 'slug' => 'news']];
 }
 
 function spritz_get_all_categories(): array {
@@ -227,7 +228,7 @@ function spritz_get_all_categories(): array {
     $result = [];
     foreach ($cats as $cat) {
         if ($cat->slug === 'uncategorized') continue;
-        $result[] = ['name' => $cat->name, 'slug' => $cat->slug];
+        $result[] = ['id' => spritz_term_uuid($cat), 'name' => $cat->name, 'slug' => $cat->slug];
     }
     return $result;
 }
@@ -251,8 +252,9 @@ function spritz_get_featured_image($post_id): ?array {
 
 function spritz_get_authors($post): array {
     $user = get_userdata($post->post_author);
-    if (!$user) return [['name' => 'ModoItaliano', 'slug' => 'modoitaliano']];
+    if (!$user) return [['id' => spritz_author_uuid(null), 'name' => 'ModoItaliano', 'slug' => 'modoitaliano']];
     return [[
+        'id' => spritz_author_uuid($user),
         'name' => $user->display_name,
         'slug' => sanitize_title($user->display_name),
     ]];

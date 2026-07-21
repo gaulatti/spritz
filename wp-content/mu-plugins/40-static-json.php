@@ -310,7 +310,7 @@ function spritz_get_homepage_json(WP_REST_Request $request) {
 
     $payload = [
         'generatedAt' => spritz_iso_datetime(),
-        'id' => 'homepage-' . $lang,
+        'id' => spritz_homepage_uuid($lang),
         'slug' => $route,
         'url' => $route,
         'layout' => 'homepage',
@@ -323,7 +323,7 @@ function spritz_get_homepage_json(WP_REST_Request $request) {
         'excerpt' => $excerpt,
         'language' => $lang,
         'featured' => true,
-        'authors' => [['name' => 'ModoItaliano', 'slug' => 'modoitaliano']],
+        'authors' => [['id' => spritz_author_uuid(null), 'name' => 'ModoItaliano', 'slug' => 'modoitaliano']],
         'page' => $homepage_post ? [
             'title'     => $title,
             'excerpt'   => $excerpt,
@@ -393,7 +393,7 @@ function spritz_get_category_json(WP_REST_Request $request) {
 
     $payload = [
         'generatedAt' => spritz_iso_datetime(),
-        'id' => 'category-' . $lang . '-' . $cat->slug,
+        'id' => spritz_term_uuid($cat),
         'slug' => $route,
         'url' => $route,
         'layout' => 'category-page',
@@ -406,9 +406,10 @@ function spritz_get_category_json(WP_REST_Request $request) {
         'excerpt' => $excerpt,
         'language' => $lang,
         'featured' => true,
-        'authors' => [['name' => 'ModoItaliano', 'slug' => 'modoitaliano']],
+        'authors' => [['id' => spritz_author_uuid(null), 'name' => 'ModoItaliano', 'slug' => 'modoitaliano']],
         'featuredImage' => $featured_image,
         'category' => [
+            'id'          => spritz_term_uuid($cat),
             'name'        => $cat->name,
             'slug'        => $cat->slug,
             'description' => $cat->description,
@@ -527,7 +528,7 @@ function spritz_build_article_payload(WP_Post $post): array {
     $full_slug = strpos($slug, '/' . $cat_slug) === 0 ? $slug : '/' . $cat_slug . $slug;
 
     $payload = [
-        'id'             => (string) $post->ID,
+        'id'             => spritz_post_uuid($post),
         'slug'           => $full_slug,
         'url'            => $full_slug,
         'layout'         => 'article-page',
@@ -570,7 +571,7 @@ function spritz_build_article_reference(WP_Post $post, string $lang): array {
     $url = '/' . $cat_slug . $slug;
 
     $reference = [
-        'id'      => (string) $post->ID,
+        'id'      => spritz_post_uuid($post),
         'url'     => $url,
         'title'   => get_the_title($post),
         'excerpt' => spritz_get_excerpt($post),
@@ -594,7 +595,7 @@ function spritz_get_all_categories_for_json(): array {
     $result = [];
     foreach ($cats as $cat) {
         if ($cat->slug === 'uncategorized') continue;
-        $result[] = ['name' => $cat->name, 'slug' => $cat->slug];
+        $result[] = ['id' => spritz_term_uuid($cat), 'name' => $cat->name, 'slug' => $cat->slug];
     }
     return $result;
 }
@@ -676,9 +677,9 @@ if (!function_exists('spritz_get_categories')) {
 
         $result = [];
         foreach ($cats as $cat) {
-            $result[] = ['name' => $cat->name, 'slug' => $cat->slug];
+            $result[] = ['id' => spritz_term_uuid($cat), 'name' => $cat->name, 'slug' => $cat->slug];
         }
-        return !empty($result) ? $result : [['name' => 'News', 'slug' => 'news']];
+        return !empty($result) ? $result : [['id' => spritz_default_category_uuid(), 'name' => 'News', 'slug' => 'news']];
     }
 }
 
@@ -700,8 +701,8 @@ if (!function_exists('spritz_get_featured_image')) {
 if (!function_exists('spritz_get_authors')) {
     function spritz_get_authors($post): array {
         $user = get_userdata($post->post_author);
-        if (!$user) return [['name' => 'ModoItaliano', 'slug' => 'modoitaliano']];
-        return [['name' => $user->display_name, 'slug' => sanitize_title($user->display_name)]];
+        if (!$user) return [['id' => spritz_author_uuid(null), 'name' => 'ModoItaliano', 'slug' => 'modoitaliano']];
+        return [['id' => spritz_author_uuid($user), 'name' => $user->display_name, 'slug' => sanitize_title($user->display_name)]];
     }
 }
 
