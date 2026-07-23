@@ -96,7 +96,7 @@ function spritz_build_canonical_article($post): array {
     $cat_slug = !empty($categories) ? $categories[0]['slug'] : 'news';
     $full_slug = $slug;
 
-    if (strpos($slug, '/' . $cat_slug) !== 0) {
+    if ($slug !== '/' . $cat_slug && strpos($slug, '/' . $cat_slug . '/') !== 0) {
         $full_slug = '/' . $cat_slug . $slug;
     }
 

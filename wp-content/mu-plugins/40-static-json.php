@@ -523,7 +523,7 @@ function spritz_build_article_payload(WP_Post $post): array {
     $slug = '/' . ltrim(get_post_field('post_name', $post), '/');
     $cat_slug = !empty($categories) ? $categories[0]['slug'] : 'news';
 
-    $full_slug = strpos($slug, '/' . $cat_slug) === 0 ? $slug : '/' . $cat_slug . $slug;
+    $full_slug = ($slug === '/' . $cat_slug || strpos($slug, '/' . $cat_slug . '/') === 0) ? $slug : '/' . $cat_slug . $slug;
 
     $payload = [
         'id'             => spritz_post_uuid($post),
