@@ -195,13 +195,13 @@ function spritz_excerpt_from_block(array $block): string {
 function spritz_get_post_language($post_id): string {
     if (function_exists('pll_get_post_language')) {
         $lang = pll_get_post_language($post_id, 'slug');
-        return $lang ?: 'en';
+        return $lang ?: 'es';
     }
     if (function_exists('wpml_get_language_information')) {
         $info = wpml_get_language_information(null, $post_id);
-        return $info['language_code'] ?? 'en';
+        return $info['language_code'] ?? 'es';
     }
-    return defined('DEFAULT_LANGUAGE') ? DEFAULT_LANGUAGE : 'en';
+    return defined('DEFAULT_LANGUAGE') ? DEFAULT_LANGUAGE : 'es';
 }
 
 function spritz_get_categories($post_id): array {

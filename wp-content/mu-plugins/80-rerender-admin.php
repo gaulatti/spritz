@@ -227,7 +227,7 @@ function spritz_rerender_supported_languages(): array {
         return spritz_static_json_languages();
     }
 
-    return ['en', 'es', 'it'];
+    return ['es'];
 }
 
 function spritz_rerender_sanitize_list($values): array {

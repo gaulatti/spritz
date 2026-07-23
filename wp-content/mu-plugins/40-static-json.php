@@ -129,7 +129,7 @@ function spritz_static_json_refresh($post_id, $post, $update = true): void {
 }
 
 function spritz_static_json_languages(): array {
-    return apply_filters('spritz_static_json_languages', ['en', 'es', 'it']);
+    return apply_filters('spritz_static_json_languages', ['es']);
 }
 
 if (!function_exists('spritz_iso_datetime')) {
@@ -281,7 +281,7 @@ function spritz_get_article_json(WP_REST_Request $request) {
 
 // ── Homepage JSON ─────────────────────────────────────────────────
 function spritz_get_homepage_json(WP_REST_Request $request) {
-    $lang = $request->get_param('lang') ?: 'en';
+    $lang = $request->get_param('lang') ?: 'es';
 
     $posts = get_posts([
         'post_type'      => 'post',
@@ -365,7 +365,7 @@ function spritz_get_homepage_json(WP_REST_Request $request) {
 // ── Category JSON ─────────────────────────────────────────────────
 function spritz_get_category_json(WP_REST_Request $request) {
     $category_slug = $request->get_param('category');
-    $lang = $request->get_param('lang') ?: 'en';
+    $lang = $request->get_param('lang') ?: 'es';
 
     $cat = get_category_by_slug($category_slug);
     if (!$cat) {
@@ -392,10 +392,6 @@ function spritz_get_category_json(WP_REST_Request $request) {
     $excerpt = $cat->description ?: 'Latest news in ' . $title;
     $updated_at = spritz_iso_datetime();
     $navigation_categories = spritz_get_all_categories_for_json();
-    $featured_image = null;
-    if (!empty($articles[0]['featuredImage']) && is_array($articles[0]['featuredImage'])) {
-        $featured_image = $articles[0]['featuredImage'];
-    }
 
     $payload = [
         'generatedAt' => spritz_iso_datetime(),
@@ -413,7 +409,6 @@ function spritz_get_category_json(WP_REST_Request $request) {
         'language' => $lang,
         'featured' => true,
         'authors' => [['id' => spritz_author_uuid(null), 'name' => 'ModoItaliano', 'slug' => 'modoitaliano']],
-        'featuredImage' => $featured_image,
         'category' => [
             'id'          => spritz_term_uuid($cat),
             'name'        => $cat->name,
@@ -432,10 +427,6 @@ function spritz_get_category_json(WP_REST_Request $request) {
             'categories' => $navigation_categories,
         ],
     ];
-
-    if (!$featured_image) {
-        unset($payload['featuredImage']);
-    }
 
     return rest_ensure_response($payload);
 }
@@ -469,9 +460,10 @@ function spritz_get_inventory_json(WP_REST_Request $request) {
     }
 
     $categories = spritz_get_all_categories_slugs();
+    $languages = spritz_static_json_languages();
 
     foreach ($categories as $cat_slug) {
-        foreach (['en', 'es', 'it'] as $lang) {
+        foreach ($languages as $lang) {
             $documents[] = [
                 'type'     => 'category',
                 'locale'   => $lang,
@@ -484,7 +476,7 @@ function spritz_get_inventory_json(WP_REST_Request $request) {
         }
     }
 
-    foreach (['en', 'es', 'it'] as $lang) {
+    foreach ($languages as $lang) {
         $documents[] = [
             'type'     => 'homepage',
             'locale'   => $lang,
@@ -498,7 +490,7 @@ function spritz_get_inventory_json(WP_REST_Request $request) {
 
     return rest_ensure_response([
         'generatedAt' => spritz_iso_datetime(),
-        'locales' => ['en', 'es', 'it'],
+        'locales' => $languages,
         'documents' => $documents,
     ]);
 }
@@ -506,7 +498,7 @@ function spritz_get_inventory_json(WP_REST_Request $request) {
 // ── Hero JSON ─────────────────────────────────────────────────────
 function spritz_get_hero_json(WP_REST_Request $request) {
     $hero_id = (int) $request->get_param('id');
-    $lang = $request->get_param('lang') ?: 'en';
+    $lang = $request->get_param('lang') ?: 'es';
 
     $hero = get_post($hero_id);
     if (!$hero || $hero->post_type !== 'post' || !has_term('hero', 'post_tag', $hero->ID)) {
@@ -738,12 +730,12 @@ if (!function_exists('spritz_get_post_language')) {
     function spritz_get_post_language($post_id): string {
         if (function_exists('pll_get_post_language')) {
             $lang = pll_get_post_language($post_id, 'slug');
-            return $lang ?: 'en';
+            return $lang ?: 'es';
         }
         if (function_exists('wpml_get_language_information')) {
             $info = wpml_get_language_information(null, $post_id);
-            return $info['language_code'] ?? 'en';
+            return $info['language_code'] ?? 'es';
         }
-        return defined('DEFAULT_LANGUAGE') ? DEFAULT_LANGUAGE : 'en';
+        return defined('DEFAULT_LANGUAGE') ? DEFAULT_LANGUAGE : 'es';
     }
 }
