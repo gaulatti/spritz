@@ -20,7 +20,7 @@
             now.getMilliseconds()
         );
 
-        return Array.from({ length: 12 }, function (_, index) {
+        return Array.from({ length: 48 }, function (_, index) {
             const start = new Date(first.getTime() + index * HALF_HOUR_MS);
             return {
                 start,
