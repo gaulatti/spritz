@@ -32,6 +32,31 @@ add_action('after_setup_theme', function () {
     add_theme_support('post-thumbnails', ['post']);
 });
 
+add_action('enqueue_block_editor_assets', function () {
+    $screen = get_current_screen();
+    if (!$screen || $screen->post_type !== 'post') return;
+
+    $script_path = __DIR__ . '/assets/schedule-blocks.js';
+    if (!is_readable($script_path)) return;
+
+    wp_enqueue_script(
+        'spritz-schedule-blocks',
+        plugin_dir_url(__FILE__) . 'assets/schedule-blocks.js',
+        [
+            'wp-components',
+            'wp-core-data',
+            'wp-data',
+            'wp-date',
+            'wp-editor',
+            'wp-element',
+            'wp-i18n',
+            'wp-plugins',
+        ],
+        (string) filemtime($script_path),
+        true
+    );
+});
+
 add_action('add_meta_boxes_post', function () {
     add_meta_box(
         'spritz-post-slug',
