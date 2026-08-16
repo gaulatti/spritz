@@ -36,6 +36,32 @@ add_action('enqueue_block_editor_assets', function () {
     $screen = get_current_screen();
     if (!$screen || $screen->post_type !== 'post') return;
 
+    $highlighter_script_path = __DIR__ . '/assets/highlighter-format.js';
+    if (is_readable($highlighter_script_path)) {
+        wp_enqueue_script(
+            'spritz-highlighter-format',
+            plugin_dir_url(__FILE__) . 'assets/highlighter-format.js',
+            [
+                'wp-block-editor',
+                'wp-element',
+                'wp-i18n',
+                'wp-rich-text',
+            ],
+            (string) filemtime($highlighter_script_path),
+            true
+        );
+    }
+
+    $highlighter_style_path = __DIR__ . '/assets/highlighter-format.css';
+    if (is_readable($highlighter_style_path)) {
+        wp_enqueue_style(
+            'spritz-highlighter-format',
+            plugin_dir_url(__FILE__) . 'assets/highlighter-format.css',
+            [],
+            (string) filemtime($highlighter_style_path)
+        );
+    }
+
     $script_path = __DIR__ . '/assets/schedule-blocks.js';
     if (!is_readable($script_path)) return;
 

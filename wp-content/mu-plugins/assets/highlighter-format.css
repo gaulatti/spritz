@@ -1,0 +1,14 @@
+.editor-styles-wrapper mark.spritz-highlight {
+    background: linear-gradient(
+        104deg,
+        transparent 0.7%,
+        rgba(255, 229, 0, 0.84) 1.2%,
+        rgba(255, 235, 59, 0.72) 96%,
+        transparent 98%
+    );
+    box-decoration-break: clone;
+    color: inherit;
+    margin: 0 -0.02em;
+    padding: 0 0.06em;
+    -webkit-box-decoration-break: clone;
+}
