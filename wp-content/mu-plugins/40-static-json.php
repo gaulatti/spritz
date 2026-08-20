@@ -129,7 +129,7 @@ function spritz_static_json_refresh($post_id, $post, $update = true): void {
 }
 
 function spritz_static_json_languages(): array {
-    return apply_filters('spritz_static_json_languages', ['es']);
+    return apply_filters('spritz_static_json_languages', ['es', 'en', 'it']);
 }
 
 if (!function_exists('spritz_iso_datetime')) {
@@ -728,6 +728,11 @@ if (!function_exists('spritz_get_body')) {
 
 if (!function_exists('spritz_get_post_language')) {
     function spritz_get_post_language($post_id): string {
+        $meta_lang = sanitize_key((string) get_post_meta((int) $post_id, '_spritz_language', true));
+        if (in_array($meta_lang, ['es', 'en', 'it'], true)) {
+            return $meta_lang;
+        }
+
         if (function_exists('pll_get_post_language')) {
             $lang = pll_get_post_language($post_id, 'slug');
             return $lang ?: 'es';
