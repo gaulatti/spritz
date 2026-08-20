@@ -20,6 +20,7 @@ add_action('save_post_post', 'spritz_ai_translation_enqueue_on_save', 30, 3);
 add_action('save_post_post', 'spritz_ai_translation_mark_manual_edit', 40, 3);
 
 function spritz_ai_translation_bootstrap(): void {
+    if (function_exists('is_blog_installed') && !is_blog_installed()) return;
     spritz_ai_translation_ensure_table();
 }
 
