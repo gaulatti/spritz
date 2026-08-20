@@ -1,0 +1,19 @@
+name: Test Spritz
+
+on:
+  pull_request:
+
+jobs:
+  backup-policy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: Test backup retention and naming policy
+        run: php test/backup-policy-test.php
+      - name: Build production image
+        run: docker build -t spritz:test .
+      - name: Check backup and restore syntax in the image
+        run: |
+          docker run --rm --entrypoint php spritz:test -l /usr/local/bin/backup-db.php
+          docker run --rm --entrypoint php spritz:test -l /usr/local/bin/restore-db.php
