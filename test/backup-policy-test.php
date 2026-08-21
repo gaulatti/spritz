@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/../bin/backup-policy.php';
+require_once __DIR__ . '/../bin/backup-db.php';
 
 function assert_same($expected, $actual, string $message): void {
     if ($expected !== $actual) {
@@ -52,5 +53,15 @@ assert_true(!spritz_restore_target_is_isolated('restore_drill', 'wordpress'), 'R
 $backup_source = file_get_contents(__DIR__ . '/../bin/backup-db.php');
 assert_true($backup_source !== false, 'Backup source must be readable.');
 assert_true(!str_contains($backup_source, 's3://%s/%s'), 'Backup logs must not disclose bucket or object identifiers.');
+assert_same('daily', backup_tier_for_key($daily_keys[1]), 'Backup reporting must identify completed tiers without exposing keys.');
+assert_same(
+    'upload failed Completed copies before failure: 2/3 (tiers: hourly, daily).',
+    backup_failure_message('upload failed', ['hourly', 'daily'], 3),
+    'Partial backup failure reporting must identify safe completed tiers.'
+);
+assert_true(
+    !str_contains(backup_failure_message('upload failed', ['hourly'], 3), $hourly_keys[0]),
+    'Partial backup failure reporting must not expose object keys.'
+);
 
 fwrite(STDOUT, "backup policy tests passed\n");

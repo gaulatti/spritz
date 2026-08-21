@@ -24,6 +24,7 @@ function run_backup(): void {
 
     fwrite(STDOUT, "Starting database backup.\n");
 
+    $uploaded_tiers = [];
     try {
         dump_database_to_gzip($db_host, $db_user, $db_password, $db_name, $local_path);
         $checksum = hash_file('sha256', $local_path, true);
@@ -32,15 +33,38 @@ function run_backup(): void {
         }
         foreach ($keys as $key) {
             upload_backup_to_s3($local_path, $bucket, $key, $region, $writer_role_arn, $checksum);
+            $uploaded_tiers[] = backup_tier_for_key($key);
         }
     } catch (Throwable $exception) {
         @unlink($local_path);
-        fail($exception->getMessage());
+        fail(backup_failure_message($exception->getMessage(), $uploaded_tiers, count($keys)));
     }
 
     $size = filesize($local_path);
     @unlink($local_path);
     fwrite(STDOUT, sprintf("Database backup uploaded: copies=%d bytes=%d checksum=sha256\n", count($keys), $size));
+}
+
+function backup_tier_for_key(string $key): string {
+    if (preg_match('#^backups/(hourly|daily|weekly)/#', $key, $matches) !== 1) {
+        return 'unknown';
+    }
+
+    return $matches[1];
+}
+
+function backup_failure_message(string $message, array $uploaded_tiers, int $expected_copies): string {
+    if (empty($uploaded_tiers)) {
+        return sprintf('%s Completed copies before failure: 0/%d.', $message, $expected_copies);
+    }
+
+    return sprintf(
+        '%s Completed copies before failure: %d/%d (tiers: %s).',
+        $message,
+        count($uploaded_tiers),
+        $expected_copies,
+        implode(', ', $uploaded_tiers)
+    );
 }
 
 function dump_database_to_gzip(string $host, string $user, string $password, string $database, string $path): void {
@@ -64,6 +88,9 @@ function dump_database_to_gzip(string $host, string $user, string $password, str
     }
 
     try {
+        // This generator intentionally emits a restricted SQL subset understood by
+        // restore-db.php: ordinary semicolon-terminated DDL/DML only. It never emits
+        // DELIMITER changes, stored routines, triggers, events, or conditional comments.
         gzwrite($gz, "-- Spritz database backup\n");
         gzwrite($gz, '-- Generated at ' . gmdate('c') . "\n");
         gzwrite($gz, '-- Database: ' . $database . "\n\n");

@@ -122,6 +122,7 @@ function restore_gzip_to_database(
             if ($character === ';') {
                 $sql = trim(substr($statement, 0, -1));
                 if ($sql !== '') {
+                    assert_supported_restore_statement($sql);
                     $connection->query($sql);
                 }
                 $statement = '';
@@ -135,6 +136,79 @@ function restore_gzip_to_database(
         throw new RuntimeException('Backup ended with an incomplete SQL statement.');
     }
     $connection->close();
+}
+
+function assert_supported_restore_statement(string $sql): void {
+    $structure = restore_sql_structure($sql);
+    if (str_contains($structure, '/*!')) {
+        throw new RuntimeException(
+            'Backup contains unsupported MySQL conditional comments for the isolated restore parser.'
+        );
+    }
+    if (preg_match('/\bDELIMITER\b/i', $structure) === 1
+        || preg_match('/\bCREATE\b[\s\S]*\b(PROCEDURE|FUNCTION|TRIGGER|EVENT)\b/i', $structure) === 1) {
+        throw new RuntimeException(
+            'Backup contains unsupported SQL constructs (DELIMITER, procedures, functions, triggers, or events) '
+            . 'for the isolated restore parser.'
+        );
+    }
+}
+
+function restore_sql_structure(string $sql): string {
+    $structure = '';
+    $length = strlen($sql);
+    $quote = null;
+    $escaped = false;
+
+    for ($index = 0; $index < $length; $index++) {
+        $character = $sql[$index];
+        $next = $index + 1 < $length ? $sql[$index + 1] : '';
+
+        if ($quote !== null) {
+            if ($escaped) {
+                $escaped = false;
+            } elseif ($character === '\\') {
+                $escaped = true;
+            } elseif ($character === $quote) {
+                $quote = null;
+            }
+            $structure .= ' ';
+            continue;
+        }
+
+        if ($character === "'" || $character === '"' || $character === '`') {
+            $quote = $character;
+            $structure .= ' ';
+            continue;
+        }
+        if ($character === '/' && $next === '*' && ($sql[$index + 2] ?? '') === '!') {
+            $structure .= '/*!';
+            $index += 2;
+            continue;
+        }
+        if ($character === '/' && $next === '*') {
+            $end = strpos($sql, '*/', $index + 2);
+            if ($end === false) {
+                return $structure;
+            }
+            $structure .= ' ';
+            $index = $end + 1;
+            continue;
+        }
+        if ($character === '#' || ($character === '-' && $next === '-' && preg_match('/\s/', $sql[$index + 2] ?? '') === 1)) {
+            $end = strpos($sql, "\n", $index + 1);
+            if ($end === false) {
+                return $structure;
+            }
+            $structure .= "\n";
+            $index = $end;
+            continue;
+        }
+
+        $structure .= $character;
+    }
+
+    return $structure;
 }
 
 function restore_env_required(string $name): string {

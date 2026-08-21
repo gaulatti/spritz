@@ -17,3 +17,5 @@ jobs:
         run: |
           docker run --rm --entrypoint php spritz:test -l /usr/local/bin/backup-db.php
           docker run --rm --entrypoint php spritz:test -l /usr/local/bin/restore-db.php
+      - name: Test isolated restore parser guardrails
+        run: docker run --rm -v "$PWD:/workspace:ro" --entrypoint php spritz:test /workspace/test/restore-parser-test.php

@@ -77,5 +77,12 @@ and restores without printing content or identifiers. Validate representative
 row counts and application invariants inside the isolated database, then remove
 the isolated database according to the approved test-data procedure.
 
+The restore parser accepts only the restricted SQL emitted by `backup-db.php`:
+semicolon-terminated table/view DDL and row DML outside string literals. It
+rejects `DELIMITER` changes, stored procedures or functions, triggers, events,
+and MySQL conditional comments. If backup generation changes to emit any of
+those constructs, the restore parser and its guardrail tests must be updated in
+the same reviewed change.
+
 Record only the restore timestamp, selected retention tier, checksum success,
 and pass/fail result. Do not record the object key or database contents.
