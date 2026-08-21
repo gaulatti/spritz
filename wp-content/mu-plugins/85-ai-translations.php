@@ -12,6 +12,8 @@ const SPRITZ_AI_TRANSLATION_TABLE_VERSION = '20260819_2';
 const SPRITZ_AI_TRANSLATION_SOURCE_LANGUAGE = 'es';
 const SPRITZ_AI_TRANSLATION_RETRY_DELAYS = [60, 300, 900, 3600];
 
+final class SpritzAiTranslationManualEdit extends RuntimeException {}
+
 add_action('init', 'spritz_ai_translation_bootstrap');
 add_action('admin_menu', 'spritz_ai_translation_admin_menu');
 add_action('add_meta_boxes_post', 'spritz_ai_translation_add_post_metabox');
@@ -451,6 +453,9 @@ function spritz_ai_translation_lease_job(): ?array {
     $now = current_time('mysql', true);
     $stale = gmdate('Y-m-d H:i:s', time() - 10 * MINUTE_IN_SECONDS);
     $lease_token = bin2hex(random_bytes(16));
+    $locking_clause = spritz_ai_translation_supports_skip_locked()
+        ? 'FOR UPDATE SKIP LOCKED'
+        : 'FOR UPDATE';
 
     $wpdb->query('START TRANSACTION');
     try {
@@ -458,7 +463,7 @@ function spritz_ai_translation_lease_job(): ?array {
             "SELECT id FROM {$table}
             WHERE ((status = 'queued' AND available_at <= %s) OR (status = 'leased' AND leased_at < %s))
             ORDER BY available_at ASC, created_at ASC
-            LIMIT 1 FOR UPDATE SKIP LOCKED",
+            LIMIT 1 {$locking_clause}",
             $now,
             $stale
         ));
@@ -492,6 +497,18 @@ function spritz_ai_translation_lease_job(): ?array {
     ), ARRAY_A) ?: null;
 }
 
+function spritz_ai_translation_supports_skip_locked(?string $version = null, ?string $server_info = null): bool {
+    global $wpdb;
+    $version ??= (string) $wpdb->db_version();
+    if ($server_info === null) {
+        $server_info = method_exists($wpdb, 'db_server_info')
+            ? (string) $wpdb->db_server_info()
+            : '';
+    }
+    $is_mariadb = stripos($server_info, 'mariadb') !== false;
+    return version_compare($version, $is_mariadb ? '10.6.0' : '8.0.1', '>=');
+}
+
 function spritz_ai_translation_process_job(array $job): void {
     try {
         if (spritz_ai_translation_is_superseded($job) || !spritz_ai_translation_owns_lease($job)) {
@@ -506,7 +523,7 @@ function spritz_ai_translation_process_job(array $job): void {
         }
         $existing_id = spritz_ai_translation_find_existing_post((int) $job['source_post_id'], (string) $job['target_language']);
         if ($existing_id && get_post_meta($existing_id, '_spritz_translation_machine_owned', true) !== '1') {
-            throw new RuntimeException('Translated sibling was manually edited and cannot be overwritten');
+            throw new SpritzAiTranslationManualEdit('Translated sibling was manually edited and cannot be overwritten');
         }
         if (!spritz_ai_translation_settings()['enabled']) {
             throw new RuntimeException('Translation engine disabled before provider call');
@@ -522,7 +539,11 @@ function spritz_ai_translation_process_job(array $job): void {
         $translated_id = spritz_ai_translation_upsert_post($translated_payload, $provider_config, $job);
         spritz_ai_translation_mark_job((int) $job['id'], 'completed', '', null, (string) $job['lease_token'], $translated_id);
     } catch (Throwable $error) {
-        spritz_ai_translation_fail_job($job, $error->getMessage());
+        spritz_ai_translation_fail_job(
+            $job,
+            $error->getMessage(),
+            $error instanceof SpritzAiTranslationManualEdit
+        );
     }
 }
 
@@ -547,9 +568,8 @@ function spritz_ai_translation_is_superseded(array $job): bool {
     return $count > 0;
 }
 
-function spritz_ai_translation_fail_job(array $job, string $message): void {
+function spritz_ai_translation_fail_job(array $job, string $message, bool $manual = false): void {
     $attempts = (int) ($job['attempts'] ?? 0);
-    $manual = str_contains($message, 'manually edited');
     $retry_index = $attempts - 1;
     $retry = !$manual && array_key_exists($retry_index, SPRITZ_AI_TRANSLATION_RETRY_DELAYS);
     $delay = $retry ? SPRITZ_AI_TRANSLATION_RETRY_DELAYS[$retry_index] : 0;

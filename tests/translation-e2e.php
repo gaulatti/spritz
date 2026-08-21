@@ -26,6 +26,11 @@ spritz_ai_translation_ensure_table();
 $wpdb->query('DELETE FROM ' . spritz_ai_translation_table_name());
 spritz_test_set_settings();
 
+spritz_test_assert(!spritz_ai_translation_supports_skip_locked('5.7.44', 'MySQL Community Server'), 'MySQL 5.7 must use the blocking transactional lease fallback');
+spritz_test_assert(spritz_ai_translation_supports_skip_locked('8.0.1', 'MySQL Community Server'), 'MySQL 8.0.1 must support SKIP LOCKED');
+spritz_test_assert(!spritz_ai_translation_supports_skip_locked('10.5.28', '10.5.28-MariaDB'), 'MariaDB 10.5 must use the blocking transactional lease fallback');
+spritz_test_assert(spritz_ai_translation_supports_skip_locked('10.6.0', '10.6.0-MariaDB'), 'MariaDB 10.6 must support SKIP LOCKED');
+
 $http_calls = 0;
 add_filter('pre_http_request', function ($preempt, $args, $url) use (&$http_calls) {
     if (!str_contains((string) $url, 'generativelanguage.googleapis.com')) return $preempt;
@@ -142,9 +147,9 @@ spritz_test_assert($recovered['lease_token'] !== $leased['lease_token'], 'stale 
 
 $wpdb->update(spritz_ai_translation_table_name(), ['attempts' => 1], ['id' => (int) $recovered['id']]);
 $recovered['attempts'] = 1;
-spritz_ai_translation_fail_job($recovered, 'provider failure');
+spritz_ai_translation_fail_job($recovered, 'provider response mentioned manually edited content');
 $retry_job = $wpdb->get_row($wpdb->prepare('SELECT * FROM ' . spritz_ai_translation_table_name() . ' WHERE id = %d', $recovered['id']), ARRAY_A);
-spritz_test_assert($retry_job['status'] === 'queued', 'first provider failure must remain retryable');
+spritz_test_assert($retry_job['status'] === 'queued', 'message text alone must not classify a provider failure as a manual edit');
 $delay = strtotime($retry_job['available_at'] . ' UTC') - time();
 spritz_test_assert($delay >= 58 && $delay <= 62, 'first retry delay must be one minute');
 spritz_test_assert(SPRITZ_AI_TRANSLATION_RETRY_DELAYS === [60, 300, 900, 3600], 'retry schedule must be 1m/5m/15m/1h');
