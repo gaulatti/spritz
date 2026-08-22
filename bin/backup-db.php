@@ -1,36 +1,71 @@
 <?php
 
-use Aws\S3\S3Client;
+require_once __DIR__ . '/backup-policy.php';
+require_once __DIR__ . '/backup-aws.php';
 
-load_pid1_environment();
-
-$db_host = env_required('DB_HOST');
-$db_name = env_required('DB_NAME');
-$db_user = env_required('DB_USER');
-$db_password = env_required('DB_PASSWORD');
-$bucket = env_required('S3_UPLOADS_BUCKET');
-$region = getenv('AWS_REGION') ?: 'us-east-1';
-$prefix = trim(getenv('DB_BACKUP_PREFIX') ?: 'backups/mysql', '/');
-$timestamp = gmdate('Ymd\THis\Z');
-$date_path = gmdate('Y/m/d');
-$safe_db_name = preg_replace('/[^A-Za-z0-9_.-]/', '-', $db_name);
-$filename = sprintf('%s-%s.sql.gz', $safe_db_name, $timestamp);
-$local_path = '/tmp/' . $filename;
-$key = sprintf('%s/%s/%s/%s', $prefix, $safe_db_name, $date_path, $filename);
-
-fwrite(STDOUT, sprintf("Starting DB backup: database=%s bucket=%s key=%s\n", $db_name, $bucket, $key));
-
-try {
-    dump_database_to_gzip($db_host, $db_user, $db_password, $db_name, $local_path);
-    upload_backup_to_s3($local_path, $bucket, $key, $region);
-} catch (Throwable $exception) {
-    @unlink($local_path);
-    fail($exception->getMessage());
+if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
+    run_backup();
 }
 
-$size = filesize($local_path);
-@unlink($local_path);
-fwrite(STDOUT, sprintf("DB backup uploaded: s3://%s/%s (%d bytes)\n", $bucket, $key, $size));
+function run_backup(): void {
+    load_pid1_environment();
+
+    $db_host = env_required('DB_HOST');
+    $db_name = env_required('DB_NAME');
+    $db_user = env_required('DB_USER');
+    $db_password = env_required('DB_PASSWORD');
+    $bucket = env_required('S3_UPLOADS_BUCKET');
+    $region = getenv('AWS_REGION') ?: 'us-east-1';
+    $writer_role_arn = env_required('DB_BACKUP_WRITER_ROLE_ARN');
+    $created_at = new DateTimeImmutable('now', new DateTimeZone('UTC'));
+    $keys = spritz_backup_keys($db_name, $created_at);
+    $filename = basename($keys[0]);
+    $local_path = '/tmp/' . $filename;
+
+    fwrite(STDOUT, "Starting database backup.\n");
+
+    $uploaded_tiers = [];
+    try {
+        dump_database_to_gzip($db_host, $db_user, $db_password, $db_name, $local_path);
+        $checksum = hash_file('sha256', $local_path, true);
+        if ($checksum === false) {
+            throw new RuntimeException('Could not calculate the backup checksum.');
+        }
+        foreach ($keys as $key) {
+            upload_backup_to_s3($local_path, $bucket, $key, $region, $writer_role_arn, $checksum);
+            $uploaded_tiers[] = backup_tier_for_key($key);
+        }
+    } catch (Throwable $exception) {
+        @unlink($local_path);
+        fail(backup_failure_message($exception->getMessage(), $uploaded_tiers, count($keys)));
+    }
+
+    $size = filesize($local_path);
+    @unlink($local_path);
+    fwrite(STDOUT, sprintf("Database backup uploaded: copies=%d bytes=%d checksum=sha256\n", count($keys), $size));
+}
+
+function backup_tier_for_key(string $key): string {
+    if (preg_match('#^backups/(hourly|daily|weekly)/#', $key, $matches) !== 1) {
+        return 'unknown';
+    }
+
+    return $matches[1];
+}
+
+function backup_failure_message(string $message, array $uploaded_tiers, int $expected_copies): string {
+    if (empty($uploaded_tiers)) {
+        return sprintf('%s Completed copies before failure: 0/%d.', $message, $expected_copies);
+    }
+
+    return sprintf(
+        '%s Completed copies before failure: %d/%d (tiers: %s).',
+        $message,
+        count($uploaded_tiers),
+        $expected_copies,
+        implode(', ', $uploaded_tiers)
+    );
+}
 
 function dump_database_to_gzip(string $host, string $user, string $password, string $database, string $path): void {
     mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
@@ -53,13 +88,14 @@ function dump_database_to_gzip(string $host, string $user, string $password, str
     }
 
     try {
+        // This generator intentionally emits a restricted SQL subset understood by
+        // restore-db.php: ordinary semicolon-terminated DDL/DML only. It never emits
+        // DELIMITER changes, stored routines, triggers, events, or conditional comments.
         gzwrite($gz, "-- Spritz database backup\n");
         gzwrite($gz, '-- Generated at ' . gmdate('c') . "\n");
         gzwrite($gz, '-- Database: ' . $database . "\n\n");
         gzwrite($gz, "SET FOREIGN_KEY_CHECKS=0;\n");
         gzwrite($gz, "SET SQL_MODE='NO_AUTO_VALUE_ON_ZERO';\n");
-        gzwrite($gz, 'CREATE DATABASE IF NOT EXISTS ' . sql_identifier($database) . ";\n");
-        gzwrite($gz, 'USE ' . sql_identifier($database) . ";\n\n");
 
         $tables = list_database_objects($conn);
 
@@ -168,34 +204,28 @@ function flush_insert_batch($gz, string $table, array $columns, array $rows): vo
     );
 }
 
-function upload_backup_to_s3(string $path, string $bucket, string $key, string $region): void {
-    $autoload = '/var/www/html/vendor/autoload.php';
-    if (!is_readable($autoload)) {
-        throw new RuntimeException('AWS SDK autoload file is not available.');
-    }
-    require_once $autoload;
-
-    $client_config = [
-        'version' => 'latest',
-        'region' => $region,
-    ];
-
-    $credentials_file = getenv('AWS_SHARED_CREDENTIALS_FILE') ?: '/var/www/.aws/credentials';
-    if (is_readable($credentials_file)) {
-        putenv('AWS_SHARED_CREDENTIALS_FILE=' . $credentials_file);
-        $client_config['profile'] = getenv('AWS_PROFILE') ?: 'default';
-    }
-
-    putenv('AWS_EC2_METADATA_DISABLED=true');
-
-    $client = new S3Client($client_config);
-    $client->putObject([
+function upload_backup_to_s3(
+    string $path,
+    string $bucket,
+    string $key,
+    string $region,
+    string $writer_role_arn,
+    string $checksum
+): void {
+    $client = spritz_assumed_s3_client($region, $writer_role_arn, 'spritz-backup-writer');
+    $result = $client->putObject([
         'Bucket' => $bucket,
         'Key' => $key,
         'SourceFile' => $path,
         'ContentType' => 'application/gzip',
+        'ChecksumAlgorithm' => 'SHA256',
+        'ChecksumSHA256' => base64_encode($checksum),
         'ServerSideEncryption' => 'AES256',
     ]);
+
+    if (!hash_equals(base64_encode($checksum), (string) ($result['ChecksumSHA256'] ?? ''))) {
+        throw new RuntimeException('S3 did not confirm the expected SHA-256 checksum.');
+    }
 }
 
 function sql_identifier(string $name): string {
