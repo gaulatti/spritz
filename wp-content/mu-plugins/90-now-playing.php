@@ -59,6 +59,7 @@ function spritz_update_now_playing(WP_REST_Request $request) {
     }
 
     $now_playing = spritz_normalize_now_playing_payload($payload);
+    spritz_log_now_playing_receipt($now_playing);
     update_option('spritz_now_playing', $now_playing, false);
 
     $published = spritz_publish_now_playing_json($now_playing);
@@ -75,6 +76,34 @@ function spritz_update_now_playing(WP_REST_Request $request) {
         'nowPlaying' => $now_playing,
         'url' => spritz_now_playing_static_url(),
     ]);
+}
+
+function spritz_log_now_playing_receipt(array $now_playing): void {
+    $fields = [
+        'status',
+        'station',
+        'source',
+        'title',
+        'artist',
+        'album',
+        'startedAt',
+        'endedAt',
+        'durationSeconds',
+        'updatedAt',
+        'isPlaceholder',
+    ];
+    $context = [];
+
+    foreach ($fields as $field) {
+        if (array_key_exists($field, $now_playing)) {
+            $context[$field] = $now_playing[$field];
+        }
+    }
+
+    error_log(sprintf(
+        'Spritz now playing received: %s',
+        wp_json_encode($context, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+    ));
 }
 
 function spritz_now_playing_can_update(WP_REST_Request $request) {
