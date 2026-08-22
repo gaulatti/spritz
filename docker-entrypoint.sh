@@ -91,4 +91,12 @@ wp plugin activate \
   --allow-root \
   --path=/var/www/html/wordpress || true
 
+echo "Backfilling standalone pages..."
+wp eval '
+  if (function_exists("spritz_backfill_standalone_pages")) {
+      $count = spritz_backfill_standalone_pages();
+      fwrite(STDOUT, "Standalone pages published: " . $count . PHP_EOL);
+  }
+' --allow-root --path=/var/www/html/wordpress
+
 exec /usr/bin/supervisord -c /etc/supervisord.conf
