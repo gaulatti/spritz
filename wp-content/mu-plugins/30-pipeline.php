@@ -17,6 +17,7 @@ function spritz_pipeline_push($post_id, $post, $update) {
     if ($post->post_status !== 'publish') return;
     if ($post->post_type === 'revision') return;
     if ($post->post_type === 'attachment') return;
+    if ($post->post_type !== 'post' && !spritz_is_standalone_page($post)) return;
 
     $cronkite_url = defined('CRONKITE_URL') ? CRONKITE_URL : getenv('CRONKITE_URL');
     $tenant_slug  = defined('CRONKITE_TENANT_SLUG') ? CRONKITE_TENANT_SLUG : getenv('CRONKITE_TENANT_SLUG');
@@ -24,9 +25,12 @@ function spritz_pipeline_push($post_id, $post, $update) {
 
     if (!$cronkite_url || !$tenant_slug || !$pipeline_token) return;
 
-    $payload = spritz_build_canonical_article($post);
+    $payload = spritz_build_canonical_document($post);
 
-    $body = wp_json_encode(['article' => $payload]);
+    $body = wp_json_encode([
+        'article' => $payload,
+        'skipAggregations' => $post->post_type === 'page',
+    ]);
     $headers = [
         'Content-Type'  => 'application/json',
         'Authorization' => 'Bearer ' . $pipeline_token,
@@ -41,7 +45,68 @@ function spritz_pipeline_push($post_id, $post, $update) {
     ]);
 
     // ── Social delivery ────────────────────────────────────────
-    spritz_trigger_social_delivery($post, $payload, $cronkite_url, $tenant_slug, $pipeline_token);
+    if ($post->post_type === 'post') {
+        spritz_trigger_social_delivery($post, $payload, $cronkite_url, $tenant_slug, $pipeline_token);
+    }
+}
+
+function spritz_is_standalone_page($post): bool {
+    $post = get_post($post);
+    if (!$post || $post->post_type !== 'page') return false;
+
+    $template = (string) get_post_meta($post->ID, '_wp_page_template', true);
+    if ($template === 'template-homepage.php') return false;
+
+    $front_page_id = (int) get_option('page_on_front');
+    return $front_page_id <= 0 || $front_page_id !== (int) $post->ID;
+}
+
+function spritz_build_canonical_document($post): array {
+    return spritz_is_standalone_page($post)
+        ? spritz_build_canonical_page($post)
+        : spritz_build_canonical_article($post);
+}
+
+function spritz_build_canonical_page($post): array {
+    $post = get_post($post);
+    $lang = spritz_get_post_language($post->ID);
+    $route = function_exists('spritz_localized_route')
+        ? spritz_localized_route((string) $post->post_name, $lang)
+        : '/' . ltrim((string) $post->post_name, '/');
+    $body_and_excerpt = spritz_get_body_and_excerpt($post);
+    $excerpt = $body_and_excerpt['excerpt'];
+    $updated_at = spritz_iso_datetime(strtotime($post->post_modified_gmt));
+    $published_at = spritz_iso_datetime(strtotime($post->post_date_gmt));
+    $public_url = function_exists('spritz_public_site_url')
+        ? spritz_public_site_url($route)
+        : rtrim((string) (getenv('PUBLIC_SITE_URL') ?: 'https://modoitaliano.fm'), '/') . $route;
+
+    return [
+        'id'             => spritz_post_uuid($post),
+        'slug'           => $route,
+        'url'            => $route,
+        'layout'         => 'standalone-page',
+        'canonicalUrl'   => $public_url,
+        'contentVersion' => $updated_at,
+        'publishedAt'    => $published_at,
+        'updatedAt'      => $updated_at,
+        'status'         => 'published',
+        'title'          => get_the_title($post),
+        'excerpt'        => $excerpt,
+        'language'       => $lang,
+        'featured'       => false,
+        'authors'        => spritz_get_authors($post),
+        'categories'     => [],
+        'body'           => $body_and_excerpt['body'],
+        'seo'            => [
+            'metaTitle'       => get_the_title($post),
+            'metaDescription' => $excerpt,
+        ],
+        'navigation' => [
+            'categories' => spritz_get_all_categories(),
+        ],
+        'articles' => [],
+    ];
 }
 
 function spritz_trigger_social_delivery($post, $article_payload, $cronkite_url, $tenant_slug, $pipeline_token) {

@@ -20,6 +20,12 @@ add_action('rest_api_init', function () {
         'permission_callback' => '__return_true',
     ]);
 
+    register_rest_route('spritz/v1', '/json/pages/(?P<slug>[a-zA-Z0-9_/\-]+)\.json', [
+        'methods' => 'GET',
+        'callback' => 'spritz_get_page_json',
+        'permission_callback' => '__return_true',
+    ]);
+
     // ── Homepage JSON (all languages) ─────────────────────────────
     register_rest_route('spritz/v1', '/homepage-current-(?P<lang>[a-z]{2})\.json', [
         'methods' => 'GET',
@@ -58,6 +64,7 @@ function spritz_publish_static_json_to_s3($post_id, $post, $update) {
     if (!$post || $post->post_status !== 'publish') return;
     if ($post->post_type === 'revision') return;
     if ($post->post_type === 'attachment') return;
+    if ($post->post_type !== 'post' && $post->post_type !== 'page') return;
 
     if (!function_exists('spritz_s3_put_body')) {
         error_log('Spritz static JSON skipped: S3 publisher is not available.');
@@ -109,10 +116,19 @@ function spritz_publish_static_json_to_s3($post_id, $post, $update) {
         }
     }
 
-    $article_payload = spritz_build_article_payload($post);
-    $article_slug = '/' . ltrim((string) ($article_payload['slug'] ?? ''), '/');
-    if ($article_slug !== '/') {
-        spritz_write_static_json('json/articles', ltrim($article_slug, '/') . '.json', $article_payload, 'no-store');
+    if ($post->post_type === 'post') {
+        $document_payload = spritz_build_article_payload($post);
+        $document_collection = 'json/articles';
+    } elseif (function_exists('spritz_is_standalone_page') && spritz_is_standalone_page($post)) {
+        $document_payload = spritz_build_canonical_page($post);
+        $document_collection = 'json/pages';
+    }
+
+    if (isset($document_payload, $document_collection)) {
+        $document_slug = '/' . ltrim((string) ($document_payload['slug'] ?? ''), '/');
+        if ($document_slug !== '/') {
+            spritz_write_static_json($document_collection, ltrim($document_slug, '/') . '.json', $document_payload, 'no-store');
+        }
     }
 
     $inventory = spritz_static_json_response_data('spritz_get_inventory_json', []);
@@ -126,6 +142,40 @@ function spritz_publish_static_json_to_s3($post_id, $post, $update) {
 
 function spritz_static_json_refresh($post_id, $post, $update = true): void {
     spritz_publish_static_json_to_s3($post_id, $post, $update);
+}
+
+function spritz_backfill_standalone_pages(): int {
+    $pages = get_posts([
+        'post_type' => 'page',
+        'post_status' => 'publish',
+        'posts_per_page' => -1,
+    ]);
+    $published = 0;
+
+    foreach ($pages as $page) {
+        if (!spritz_is_standalone_page($page)) continue;
+
+        $document = spritz_build_canonical_page($page);
+        $route = '/' . ltrim((string) ($document['slug'] ?? ''), '/');
+        if ($route === '/') continue;
+
+        spritz_write_static_json(
+            'json/pages',
+            ltrim($route, '/') . '.json',
+            $document,
+            'no-store'
+        );
+        spritz_pipeline_push($page->ID, $page, true);
+        $published++;
+    }
+
+    $inventory = spritz_static_json_response_data('spritz_get_inventory_json', []);
+    if ($inventory !== null) {
+        spritz_write_static_json('', 'inventory.json', $inventory, 'no-store');
+        spritz_write_static_json('', 'cronkite-inventory.json', $inventory, 'no-store');
+    }
+
+    return $published;
 }
 
 function spritz_static_json_languages(): array {
@@ -277,6 +327,22 @@ function spritz_get_article_json(WP_REST_Request $request) {
     }
 
     return rest_ensure_response(spritz_build_article_payload($posts[0]));
+}
+
+function spritz_get_page_json(WP_REST_Request $request) {
+    $slug = $request->get_param('slug');
+    $pages = get_posts([
+        'name' => basename($slug),
+        'post_type' => 'page',
+        'post_status' => 'publish',
+        'posts_per_page' => 1,
+    ]);
+
+    if (empty($pages) || !spritz_is_standalone_page($pages[0])) {
+        return new WP_REST_Response(['error' => 'Not found'], 404);
+    }
+
+    return rest_ensure_response(spritz_build_canonical_page($pages[0]));
 }
 
 // ── Homepage JSON ─────────────────────────────────────────────────
@@ -456,6 +522,31 @@ function spritz_get_inventory_json(WP_REST_Request $request) {
             'slug'     => $route,
             'route'    => $route,
             'url'      => $url,
+        ];
+    }
+
+    $pages = get_posts([
+        'post_type' => 'page',
+        'post_status' => 'publish',
+        'posts_per_page' => -1,
+        'orderby' => 'date',
+        'order' => 'DESC',
+    ]);
+
+    foreach ($pages as $page) {
+        if (!spritz_is_standalone_page($page)) continue;
+
+        $page_payload = spritz_build_canonical_page($page);
+        $route = '/' . ltrim((string) ($page_payload['slug'] ?? ''), '/');
+        $lang = (string) ($page_payload['language'] ?? spritz_get_post_language($page->ID));
+        $documents[] = [
+            'type' => 'standalone-page',
+            'locale' => $lang,
+            'language' => $lang,
+            'layout' => 'standalone-page',
+            'slug' => $route,
+            'route' => $route,
+            'url' => spritz_static_content_url('json/pages' . $route . '.json'),
         ];
     }
 
