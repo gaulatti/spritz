@@ -193,6 +193,11 @@ function spritz_excerpt_from_block(array $block): string {
 }
 
 function spritz_get_post_language($post_id): string {
+    $meta_lang = sanitize_key((string) get_post_meta((int) $post_id, '_spritz_language', true));
+    if (in_array($meta_lang, ['es', 'en', 'it'], true)) {
+        return $meta_lang;
+    }
+
     if (function_exists('pll_get_post_language')) {
         $lang = pll_get_post_language($post_id, 'slug');
         return $lang ?: 'es';
