@@ -16,5 +16,12 @@ ensures Pages created before this contract was deployed receive canonical JSON,
 an inventory entry, and rendered HTML without requiring an editor to resave
 them.
 
+Eligible published source Pages participate in the durable translation workflow.
+Successful translations remain native Pages and publish at localized top-level
+routes such as `/en/privacy`; the front Page and homepage template are never
+queued. Source updates supersede stale jobs. Unpublish or delete invalidates the
+source and every published localized sibling through Cronkite's synchronous,
+layout-aware unpublish endpoint and refreshes the Spritz inventory.
+
 The canonical URL uses `PUBLIC_SITE_URL` or `WP_PUBLIC_SITE_URL`, defaulting to
 `https://modoitaliano.fm`; it must never point at the Spritz WordPress host.
