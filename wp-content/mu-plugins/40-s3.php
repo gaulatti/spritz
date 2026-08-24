@@ -165,6 +165,7 @@ function spritz_s3_put_body($key, $body, $content_type = 'application/octet-stre
 
 function spritz_s3_put_object(array $object, $log_key) {
     static $client = null;
+    $started_at = microtime(true);
 
     if ($client === null) {
         spritz_configure_aws_credentials_environment();
@@ -176,6 +177,9 @@ function spritz_s3_put_object(array $object, $log_key) {
 
         if (!class_exists(S3Client::class)) {
             error_log('Spritz S3 offload skipped: AWS SDK is not available.');
+            if (function_exists('spritz_metrics_observe_dependency')) {
+                spritz_metrics_observe_dependency('s3', 'put', 'unavailable', $started_at);
+            }
             return false;
         }
 
@@ -196,9 +200,15 @@ function spritz_s3_put_object(array $object, $log_key) {
         $client->putObject(array_merge([
             'Bucket' => spritz_s3_bucket(),
         ], $object));
+        if (function_exists('spritz_metrics_observe_dependency')) {
+            spritz_metrics_observe_dependency('s3', 'put', 'success', $started_at);
+        }
         return true;
     } catch (Throwable $exception) {
         error_log(sprintf('Spritz S3 offload failed for %s: %s', $log_key, $exception->getMessage()));
+        if (function_exists('spritz_metrics_observe_dependency')) {
+            spritz_metrics_observe_dependency('s3', 'put', 'failure', $started_at);
+        }
         return false;
     }
 }

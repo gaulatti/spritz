@@ -3,11 +3,16 @@
 require_once __DIR__ . '/backup-policy.php';
 require_once __DIR__ . '/backup-aws.php';
 
+$metrics_library = '/var/www/html/wordpress/wp-content/mu-plugins/lib/spritz-metrics.php';
+if (!is_readable($metrics_library)) $metrics_library = __DIR__ . '/../wp-content/mu-plugins/lib/spritz-metrics.php';
+if (is_readable($metrics_library)) require_once $metrics_library;
+
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     run_backup();
 }
 
 function run_backup(): void {
+    $GLOBALS['spritz_backup_started_at'] = microtime(true);
     load_pid1_environment();
 
     $db_host = env_required('DB_HOST');
@@ -42,6 +47,10 @@ function run_backup(): void {
 
     $size = filesize($local_path);
     @unlink($local_path);
+    if (function_exists('spritz_metric_increment')) {
+        spritz_metric_increment('spritz_backup_jobs_total', ['result' => 'success']);
+        spritz_metric_observe('spritz_backup_duration_seconds', [], max(0, microtime(true) - $GLOBALS['spritz_backup_started_at']));
+    }
     fwrite(STDOUT, sprintf("Database backup uploaded: copies=%d bytes=%d checksum=sha256\n", count($keys), $size));
 }
 
@@ -269,6 +278,10 @@ function env_required(string $name): string {
 }
 
 function fail(string $message): void {
+    if (isset($GLOBALS['spritz_backup_started_at']) && function_exists('spritz_metric_increment')) {
+        spritz_metric_increment('spritz_backup_jobs_total', ['result' => 'failure']);
+        spritz_metric_observe('spritz_backup_duration_seconds', [], max(0, microtime(true) - $GLOBALS['spritz_backup_started_at']));
+    }
     fwrite(STDERR, 'DB backup failed: ' . $message . PHP_EOL);
     exit(1);
 }

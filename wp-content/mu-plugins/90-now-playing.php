@@ -278,15 +278,27 @@ function spritz_now_playing_iso_datetime(string $value): string {
 
 function spritz_publish_now_playing_json(array $now_playing): bool {
     if (!function_exists('spritz_s3_put_body') || !function_exists('spritz_s3_bucket') || !spritz_s3_bucket()) {
+        spritz_record_now_playing_publication($now_playing, false);
         return false;
     }
 
-    return spritz_s3_put_body(
+    $published = spritz_s3_put_body(
         'content/now-playing.json',
         wp_json_encode($now_playing, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
         'application/json',
         'no-store'
     );
+    spritz_record_now_playing_publication($now_playing, $published);
+    return $published;
+}
+
+function spritz_record_now_playing_publication(array $now_playing, bool $published): void {
+    if (!function_exists('spritz_metric_increment')) return;
+    $status = spritz_now_playing_status($now_playing['status'] ?? 'unknown', $now_playing);
+    spritz_metric_increment('spritz_now_playing_publications_total', [
+        'status' => $status,
+        'result' => $published ? 'success' : 'failure',
+    ]);
 }
 
 function spritz_now_playing_json_exists(): bool {

@@ -17,9 +17,13 @@ while (true) {
     try {
         $processed = spritz_ai_translation_process_jobs(1);
         if ($processed === 0) {
+            if (function_exists('spritz_metric_increment')) spritz_metric_increment('spritz_worker_cycles_total', ['worker' => 'translation', 'result' => 'idle']);
             sleep($idle_sleep);
+        } elseif (function_exists('spritz_metric_increment')) {
+            spritz_metric_increment('spritz_worker_cycles_total', ['worker' => 'translation', 'result' => 'processed']);
         }
     } catch (Throwable $error) {
+        if (function_exists('spritz_metric_increment')) spritz_metric_increment('spritz_worker_cycles_total', ['worker' => 'translation', 'result' => 'error']);
         // Never include payloads or provider responses in the process log.
         fwrite(STDERR, 'Translation worker error: ' . get_class($error) . "\n");
         sleep($idle_sleep);

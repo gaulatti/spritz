@@ -4,6 +4,11 @@ Spritz treats Spanish as the canonical source language and creates English and I
 
 The Supervisor-managed `translation-worker` runs in the Spritz image and processes one job at a time. It does not depend on WordPress page traffic or WP-Cron. Failures are retried after 1 minute, 5 minutes, 15 minutes, and 1 hour; the next failure is terminal and remains visible in Tools > Spritz Translations. An administrator can retry a terminal failure. A sibling changed by a person enters the `manual` state and is never overwritten unless an administrator explicitly chooses **Resume machine translation**.
 
+Queue inventory, worker cycles, job transitions, Gemini outcomes/latency, and
+retry exhaustion are exposed through the private metrics contract documented in
+[`observability.md`](observability.md). Labels contain only controlled lifecycle
+and result values.
+
 `GEMINI_API_KEY` must be provided by the deployment secret loaded through `APP_SECRET_ARN`. Spritz never writes the key to WordPress options. The admin page reports only whether the environment variable is configured.
 
 The worker rechecks the engine switch before the Gemini request and before persistence. Successful translations set Spritz's `_spritz_language` and `_spritz_original_post_id` metadata first; Polylang metadata is compatibility-only. Publication then uses the normal WordPress save hooks, which produce canonical JSON and call Cronkite. Spanish keeps the unprefixed route, while English and Italian use `/en/...` and `/it/...`.

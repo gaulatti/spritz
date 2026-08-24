@@ -23,7 +23,12 @@ function spritz_pipeline_push($post_id, $post, $update) {
     $tenant_slug  = defined('CRONKITE_TENANT_SLUG') ? CRONKITE_TENANT_SLUG : getenv('CRONKITE_TENANT_SLUG');
     $pipeline_token = defined('PIPELINE_TOKEN') ? PIPELINE_TOKEN : getenv('PIPELINE_TOKEN');
 
-    if (!$cronkite_url || !$tenant_slug || !$pipeline_token) return;
+    if (!$cronkite_url || !$tenant_slug || !$pipeline_token) {
+        if (function_exists('spritz_metrics_observe_dependency')) {
+            spritz_metrics_observe_dependency('cronkite', 'rerender', 'unavailable', microtime(true));
+        }
+        return;
+    }
 
     $payload = spritz_build_canonical_document($post);
 
@@ -37,12 +42,16 @@ function spritz_pipeline_push($post_id, $post, $update) {
         'x-tenant-id'   => $tenant_slug,
     ];
 
-    wp_remote_post($cronkite_url . '/pipeline/rerender', [
+    $started_at = microtime(true);
+    $response = wp_remote_post($cronkite_url . '/pipeline/rerender', [
         'body'    => $body,
         'headers' => $headers,
         'timeout' => 15,
         'blocking' => false,
     ]);
+    if (function_exists('spritz_metrics_observe_dependency')) {
+        spritz_metrics_observe_dependency('cronkite', 'rerender', is_wp_error($response) ? 'failure' : 'success', $started_at);
+    }
 
     // ── Social delivery ────────────────────────────────────────
     if ($post->post_type === 'post') {
@@ -139,12 +148,16 @@ function spritz_trigger_social_delivery($post, $article_payload, $cronkite_url, 
         'x-tenant-id'   => $tenant_slug,
     ];
 
-    wp_remote_post($cronkite_url . '/pipeline/social-delivery', [
+    $started_at = microtime(true);
+    $response = wp_remote_post($cronkite_url . '/pipeline/social-delivery', [
         'body'    => wp_json_encode($social),
         'headers' => $headers,
         'timeout' => 10,
         'blocking' => false,
     ]);
+    if (function_exists('spritz_metrics_observe_dependency')) {
+        spritz_metrics_observe_dependency('cronkite', 'social', is_wp_error($response) ? 'failure' : 'success', $started_at);
+    }
 }
 
 function spritz_build_canonical_article($post): array {

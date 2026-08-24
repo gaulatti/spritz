@@ -402,6 +402,12 @@ function spritz_ai_translation_enqueue_job(int $source_post_id, string $source_l
             $source_revision
         ));
     }
+    if (function_exists('spritz_metric_increment')) {
+        spritz_metric_increment('spritz_translation_jobs_total', [
+            'operation' => 'enqueue',
+            'result' => $inserted ? 'created' : 'deduplicated',
+        ]);
+    }
 
     return (bool) $inserted;
 }
@@ -483,6 +489,9 @@ function spritz_ai_translation_lease_job(): ?array {
         ));
         if ($updated !== 1) {
             throw new RuntimeException('Unable to claim translation job');
+        }
+        if (function_exists('spritz_metric_increment')) {
+            spritz_metric_increment('spritz_translation_job_transitions_total', ['status' => 'leased']);
         }
         $wpdb->query('COMMIT');
     } catch (Throwable $error) {
@@ -573,6 +582,12 @@ function spritz_ai_translation_fail_job(array $job, string $message, bool $manua
     $retry_index = $attempts - 1;
     $retry = !$manual && array_key_exists($retry_index, SPRITZ_AI_TRANSLATION_RETRY_DELAYS);
     $delay = $retry ? SPRITZ_AI_TRANSLATION_RETRY_DELAYS[$retry_index] : 0;
+    if (function_exists('spritz_metric_increment')) {
+        spritz_metric_increment('spritz_worker_retries_total', [
+            'worker' => 'translation',
+            'result' => $manual ? 'manual' : ($retry ? 'scheduled' : 'exhausted'),
+        ]);
+    }
     spritz_ai_translation_mark_job(
         (int) $job['id'],
         $manual ? 'manual' : ($retry ? 'queued' : 'failed'),
@@ -597,7 +612,10 @@ function spritz_ai_translation_mark_job(int $id, string $status, string $error =
         $sql .= ' AND lease_token = %s';
         $args[] = $lease_token;
     }
-    $wpdb->query($wpdb->prepare($sql, ...$args));
+    $updated = $wpdb->query($wpdb->prepare($sql, ...$args));
+    if ($updated && function_exists('spritz_metric_increment') && in_array($status, ['queued', 'leased', 'completed', 'failed', 'manual', 'superseded'], true)) {
+        spritz_metric_increment('spritz_translation_job_transitions_total', ['status' => $status]);
+    }
 }
 
 function spritz_ai_translation_retry_job(int $id): bool {
@@ -612,7 +630,7 @@ function spritz_ai_translation_retry_job(int $id): bool {
         if (!$sibling_id) return false;
         update_post_meta($sibling_id, '_spritz_translation_machine_owned', '1');
     }
-    return (bool) $wpdb->query($wpdb->prepare(
+    $retried = (bool) $wpdb->query($wpdb->prepare(
         "UPDATE {$table} SET status = 'queued', attempts = 0, available_at = %s,
         leased_at = NULL, lease_token = NULL, completed_at = NULL, error = NULL, updated_at = %s
         WHERE id = %d AND status IN ('failed', 'manual')",
@@ -620,6 +638,13 @@ function spritz_ai_translation_retry_job(int $id): bool {
         $now,
         $id
     ));
+    if (function_exists('spritz_metric_increment')) {
+        spritz_metric_increment('spritz_translation_jobs_total', [
+            'operation' => 'manual_retry',
+            'result' => $retried ? 'accepted' : 'rejected',
+        ]);
+    }
+    return $retried;
 }
 
 function spritz_ai_translation_prepare(array $payload, string $target_language): array {
@@ -711,6 +736,9 @@ function spritz_ai_translation_batches(array $items, array $config): array {
 
 function spritz_ai_translation_gemini_translate_batch(array $prepared, array $items, array $config): array {
     if (empty($items)) return [];
+    $started_at = microtime(true);
+    $metric_result = 'failure';
+    try {
 
     $model = trim((string) ($config['gemini_model'] ?? 'gemini-3.6-flash'));
     $timeout = max(1, (int) ceil(((int) ($config['request_timeout_ms'] ?? 120000)) / 1000));
@@ -797,7 +825,13 @@ function spritz_ai_translation_gemini_translate_batch(array $prepared, array $it
             throw new RuntimeException('Gemini returned a non-string translation');
         }
     }
-    return $parsed['translated_strings'];
+        $metric_result = 'success';
+        return $parsed['translated_strings'];
+    } finally {
+        if (function_exists('spritz_metrics_observe_dependency')) {
+            spritz_metrics_observe_dependency('gemini', 'translate', $metric_result, $started_at);
+        }
+    }
 }
 
 function spritz_ai_translation_upsert_post(array $payload, array $config, array $job): int {

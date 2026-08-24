@@ -13,9 +13,57 @@ jobs:
         run: php test/backup-policy-test.php
       - name: Build production image
         run: docker build -t spritz:test .
+      - name: Test bounded metrics collector
+        run: php test/metrics-test.php
       - name: Check backup and restore syntax in the image
         run: |
           docker run --rm --entrypoint php spritz:test -l /usr/local/bin/backup-db.php
           docker run --rm --entrypoint php spritz:test -l /usr/local/bin/restore-db.php
+          docker run --rm --entrypoint php spritz:test -l /usr/local/share/spritz/metrics.php
+          docker run --rm --entrypoint php spritz:test -l /var/www/html/wordpress/wp-content/mu-plugins/05-metrics.php
+          docker run --rm --entrypoint php spritz:test -l /var/www/html/wordpress/wp-content/mu-plugins/lib/spritz-metrics.php
       - name: Test isolated restore parser guardrails
         run: docker run --rm -v "$PWD:/workspace:ro" --entrypoint php spritz:test /workspace/test/restore-parser-test.php
+
+  observability-runtime:
+    runs-on: ubuntu-latest
+    env:
+      METRICS_TOKEN: integration-test-metrics-token
+      TRANSLATION_WORKER_DISABLED: '1'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Start isolated Spritz stack
+        run: docker compose up --build -d
+      - name: Scrape private metrics boundary
+        run: |
+          docker compose exec -T wordpress sh -lc \
+            'test "$METRICS_TOKEN" = "integration-test-metrics-token"'
+          for attempt in $(seq 1 60); do
+            status=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+              --header 'X-Spritz-Metrics-Token: integration-test-metrics-token' \
+              http://localhost:8080/metrics || true)
+            if [ "$status" = "200" ]; then
+              break
+            fi
+            if [ "$status" = "403" ]; then
+              curl --silent --show-error --dump-header - --output /dev/null \
+                --header 'X-Spritz-Metrics-Token: integration-test-metrics-token' \
+                http://localhost:8080/metrics
+              exit 1
+            fi
+            sleep 2
+          done
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://localhost:8080/metrics)" = "403"
+          curl --fail --silent --dump-header /tmp/spritz-metrics.headers \
+            --header 'X-Spritz-Metrics-Token: integration-test-metrics-token' \
+            http://localhost:8080/metrics > /tmp/spritz-metrics.prom
+          grep -i '^content-type: text/plain; version=0.0.4; charset=utf-8' /tmp/spritz-metrics.headers
+          docker run --rm -i --entrypoint /bin/promtool prom/prometheus:v3.9.0 \
+            check metrics < /tmp/spritz-metrics.prom
+      - name: Show service logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+      - name: Tear down test services
+        if: always()
+        run: docker compose down --volumes

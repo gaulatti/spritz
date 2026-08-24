@@ -14,6 +14,8 @@ tickets, pull requests, or chat.
    the mounted bootstrap identity only `sts:AssumeRole` for the writer role.
 3. Deploy Spritz. Confirm one scheduled run reports only its copy count, byte
    count, and checksum algorithm. It must not log the database, bucket, or key.
+   Confirm the private metrics endpoint records a successful backup and bounded
+   duration without exposing any backup identifier.
 4. Verify new objects by metadata only. Their keys must remain beneath
    `backups/hourly/`, `backups/daily/`, or `backups/weekly/`; filenames must
    contain a fresh 32-character hexadecimal random segment.
