@@ -17,9 +17,16 @@ final class SpritzAiTranslationManualEdit extends RuntimeException {}
 add_action('init', 'spritz_ai_translation_bootstrap');
 add_action('admin_menu', 'spritz_ai_translation_admin_menu');
 add_action('add_meta_boxes_post', 'spritz_ai_translation_add_post_metabox');
+add_action('add_meta_boxes_page', 'spritz_ai_translation_add_page_metabox');
 add_action('save_post_post', 'spritz_ai_translation_save_post_meta', 5, 3);
+add_action('save_post_page', 'spritz_ai_translation_save_post_meta', 5, 3);
 add_action('save_post_post', 'spritz_ai_translation_enqueue_on_save', 30, 3);
+add_action('save_post_page', 'spritz_ai_translation_enqueue_on_save', 30, 3);
 add_action('save_post_post', 'spritz_ai_translation_mark_manual_edit', 40, 3);
+add_action('save_post_page', 'spritz_ai_translation_mark_manual_edit', 40, 3);
+add_action('transition_post_status', 'spritz_ai_translation_unpublish_page_transition', 10, 3);
+add_action('before_delete_post', 'spritz_ai_translation_before_delete_page', 10, 2);
+add_action('deleted_post', 'spritz_ai_translation_after_delete_page', 10, 2);
 
 function spritz_ai_translation_bootstrap(): void {
     if (function_exists('is_blog_installed') && !is_blog_installed()) return;
@@ -42,6 +49,17 @@ function spritz_ai_translation_add_post_metabox(): void {
         __('Spritz Translation', 'spritz'),
         'spritz_ai_translation_render_post_metabox',
         'post',
+        'side',
+        'default'
+    );
+}
+
+function spritz_ai_translation_add_page_metabox(): void {
+    add_meta_box(
+        'spritz-ai-translation-meta',
+        __('Spritz Translation', 'spritz'),
+        'spritz_ai_translation_render_post_metabox',
+        'page',
         'side',
         'default'
     );
@@ -139,7 +157,7 @@ function spritz_ai_translation_render_admin_page(): void {
             <table class="form-table" role="presentation">
                 <tr>
                     <th scope="row"><?php esc_html_e('Enable AI translation', 'spritz'); ?></th>
-                    <td><label><input type="checkbox" name="enabled" value="1" <?php checked($settings['enabled']); ?> /> <?php esc_html_e('Queue translations when posts are published.', 'spritz'); ?></label></td>
+                    <td><label><input type="checkbox" name="enabled" value="1" <?php checked($settings['enabled']); ?> /> <?php esc_html_e('Queue translations when eligible posts or standalone Pages are published.', 'spritz'); ?></label></td>
                 </tr>
                 <tr>
                     <th scope="row"><?php esc_html_e('Auto-publish translations', 'spritz'); ?></th>
@@ -184,8 +202,8 @@ function spritz_ai_translation_render_admin_page(): void {
         <form method="post" style="display:inline-block;">
             <?php wp_nonce_field('spritz_ai_translation', 'spritz_ai_translation_nonce'); ?>
             <input type="hidden" name="spritz_ai_translation_action" value="enqueue_post" />
-            <input type="number" name="spritz_translation_post_id" min="1" placeholder="<?php esc_attr_e('Post ID', 'spritz'); ?>" />
-            <?php submit_button(__('Queue post translations', 'spritz'), 'secondary', 'submit', false); ?>
+            <input type="number" name="spritz_translation_post_id" min="1" placeholder="<?php esc_attr_e('Post or Page ID', 'spritz'); ?>" />
+            <?php submit_button(__('Queue content translations', 'spritz'), 'secondary', 'submit', false); ?>
         </form>
 
         <h2><?php esc_html_e('Jobs', 'spritz'); ?></h2>
@@ -300,7 +318,8 @@ function spritz_ai_translation_enqueue_post(int $post_id): int {
     if (!$settings['enabled']) return 0;
 
     $post = get_post($post_id);
-    if (!$post || $post->post_type !== 'post' || $post->post_status !== 'publish') return 0;
+    if (!$post || $post->post_status !== 'publish') return 0;
+    if ($post->post_type !== 'post' && !spritz_ai_translation_is_eligible_page($post)) return 0;
     if (get_post_meta($post_id, '_spritz_original_post_id', true)) return 0;
 
     $source_language = function_exists('spritz_get_post_language') ? spritz_get_post_language($post_id) : 'es';
@@ -368,7 +387,8 @@ function spritz_ai_translation_enqueue_job(int $source_post_id, string $source_l
     spritz_ai_translation_ensure_table();
     $table = spritz_ai_translation_table_name();
     $now = current_time('mysql', true);
-    $dedupe_key = implode(':', ['post', $source_post_id, $target_language]);
+    $entity_type = ($request_body['entityType'] ?? 'article') === 'standalone-page' ? 'page' : 'post';
+    $dedupe_key = implode(':', [$entity_type, $source_post_id, $target_language]);
     $provider_config = [
         'provider' => 'gemini',
         'gemini_model' => $settings['gemini_model'],
@@ -407,8 +427,9 @@ function spritz_ai_translation_enqueue_job(int $source_post_id, string $source_l
 }
 
 function spritz_ai_translation_build_request_body(WP_Post $post, string $source_language): array {
+    $entity_type = $post->post_type === 'page' ? 'standalone-page' : 'article';
     return [
-        'entityType' => 'article',
+        'entityType' => $entity_type,
         'articleId' => $post->ID,
         'originalArticleId' => $post->ID,
         'article' => [
@@ -426,6 +447,8 @@ function spritz_ai_translation_build_request_body(WP_Post $post, string $source_
 function spritz_ai_translation_source_revision(WP_Post $post): string {
     return hash('sha256', implode("\n", [
         (string) $post->post_modified_gmt,
+        (string) $post->post_type,
+        (string) $post->post_name,
         (string) $post->post_title,
         (string) $post->post_excerpt,
         (string) $post->post_content,
@@ -638,7 +661,7 @@ function spritz_ai_translation_prepare(array $payload, string $target_language):
     $push(['article', 'content'], $article['content'] ?? null, 'wordpress_block_markup');
 
     return [
-        'entityType' => 'article',
+        'entityType' => (string) ($payload['entityType'] ?? 'article'),
         'targetLanguage' => $target_language,
         'originalPayload' => $payload,
         'strings' => $strings,
@@ -810,6 +833,10 @@ function spritz_ai_translation_upsert_post(array $payload, array $config, array 
 
     $source = get_post($source_post_id);
     if (!$source) throw new RuntimeException('Source post not found');
+    $post_type = $source->post_type === 'page' ? 'page' : 'post';
+    if ($post_type === 'page' && !spritz_ai_translation_is_eligible_page($source)) {
+        throw new RuntimeException('Source Page is not eligible for standalone translation');
+    }
 
     $existing_id = spritz_ai_translation_find_existing_post($source_post_id, $target_language);
     if ($existing_id && get_post_meta($existing_id, '_spritz_translation_machine_owned', true) !== '1') {
@@ -818,10 +845,14 @@ function spritz_ai_translation_upsert_post(array $payload, array $config, array 
     $status = !empty($config['auto_publish']) ? 'publish' : 'draft';
     $slug = sanitize_title((string) ($article['slug'] ?? $source->post_name . '-' . $target_language));
     if ($slug === '') $slug = $source->post_name . '-' . $target_language;
-    $slug = wp_unique_post_slug($slug, $existing_id, $status, 'post', 0);
+    if ($post_type === 'page') {
+        spritz_ai_translation_assert_page_slug_available($slug, $existing_id);
+    } else {
+        $slug = wp_unique_post_slug($slug, $existing_id, $status, 'post', 0);
+    }
 
     $post_data = [
-        'post_type' => 'post',
+        'post_type' => $post_type,
         'post_status' => $existing_id ? get_post_status($existing_id) : 'draft',
         'post_title' => sanitize_text_field((string) ($article['title'] ?? $source->post_title)),
         'post_name' => $slug,
@@ -829,6 +860,7 @@ function spritz_ai_translation_upsert_post(array $payload, array $config, array 
         'post_content' => (string) ($article['content'] ?? $source->post_content),
         'post_author' => (int) $source->post_author,
     ];
+    if ($post_type === 'page') $post_data['post_parent'] = 0;
     if ($existing_id) $post_data['ID'] = $existing_id;
 
     $GLOBALS['spritz_ai_translation_upserting'] = true;
@@ -846,8 +878,10 @@ function spritz_ai_translation_upsert_post(array $payload, array $config, array 
 
         $source_thumbnail = get_post_thumbnail_id($source_post_id);
         if ($source_thumbnail) set_post_thumbnail($translated_id, $source_thumbnail);
-        wp_set_post_categories($translated_id, wp_get_post_categories($source_post_id), false);
-        wp_set_post_tags($translated_id, wp_get_post_tags($source_post_id, ['fields' => 'names']), false);
+        if ($post_type === 'post') {
+            wp_set_post_categories($translated_id, wp_get_post_categories($source_post_id), false);
+            wp_set_post_tags($translated_id, wp_get_post_tags($source_post_id, ['fields' => 'names']), false);
+        }
 
         if (function_exists('pll_set_post_language')) {
             pll_set_post_language($translated_id, $target_language);
@@ -881,8 +915,10 @@ function spritz_ai_translation_mark_manual_edit($post_id, $post, $update): void 
 }
 
 function spritz_ai_translation_find_existing_post(int $source_post_id, string $target_language): int {
+    $source = get_post($source_post_id);
+    $post_type = $source && $source->post_type === 'page' ? 'page' : 'post';
     $query = new WP_Query([
-        'post_type' => 'post',
+        'post_type' => $post_type,
         'post_status' => ['publish', 'draft', 'pending', 'private'],
         'posts_per_page' => 1,
         'fields' => 'ids',
@@ -893,6 +929,71 @@ function spritz_ai_translation_find_existing_post(int $source_post_id, string $t
         ],
     ]);
     return !empty($query->posts) ? (int) $query->posts[0] : 0;
+}
+
+function spritz_ai_translation_is_eligible_page($post): bool {
+    $post = get_post($post);
+    return $post && $post->post_type === 'page'
+        && function_exists('spritz_is_standalone_page')
+        && spritz_is_standalone_page($post);
+}
+
+function spritz_ai_translation_assert_page_slug_available(string $slug, int $existing_id = 0): void {
+    $slug = sanitize_title($slug);
+    if ($slug === '' || in_array($slug, ['homepage', 'instagram', 'media', 'search'], true)) {
+        throw new RuntimeException('Translated Page slug is empty or reserved');
+    }
+    $collision = get_page_by_path($slug, OBJECT, 'page');
+    if ($collision && (int) $collision->ID !== $existing_id) {
+        throw new RuntimeException('Translated Page slug collides with an existing Page');
+    }
+}
+
+function spritz_ai_translation_unpublish_page_transition(string $new_status, string $old_status, $post): void {
+    if ($old_status !== 'publish' || $new_status === 'publish' || !spritz_ai_translation_is_eligible_page($post)) return;
+    spritz_ai_translation_unpublish_page_family($post);
+}
+
+function spritz_ai_translation_before_delete_page(int $post_id, $post): void {
+    if (!$post || $post->post_status !== 'publish' || !spritz_ai_translation_is_eligible_page($post)) return;
+    spritz_ai_translation_unpublish_page_family($post);
+}
+
+function spritz_ai_translation_after_delete_page(int $post_id, $post): void {
+    if (!$post || $post->post_type !== 'page') return;
+    if (function_exists('spritz_refresh_static_inventory')) spritz_refresh_static_inventory();
+}
+
+function spritz_ai_translation_unpublish_page_family($post): void {
+    if (!empty($GLOBALS['spritz_ai_translation_invalidating'])) return;
+    $post = get_post($post);
+    if (!$post) return;
+
+    $is_translation = (int) get_post_meta($post->ID, '_spritz_original_post_id', true) > 0;
+    $documents = [$post];
+    if (!$is_translation) {
+        $siblings = get_posts([
+            'post_type' => 'page',
+            'post_status' => 'publish',
+            'posts_per_page' => -1,
+            'meta_key' => '_spritz_original_post_id',
+            'meta_value' => (string) $post->ID,
+        ]);
+        $documents = array_merge($documents, $siblings);
+    }
+
+    $GLOBALS['spritz_ai_translation_invalidating'] = true;
+    try {
+        foreach ($documents as $document) {
+            spritz_pipeline_unpublish_document($document);
+            if ((int) $document->ID !== (int) $post->ID && get_post_status($document) === 'publish') {
+                wp_update_post(['ID' => $document->ID, 'post_status' => 'draft']);
+            }
+        }
+        if (function_exists('spritz_refresh_static_inventory')) spritz_refresh_static_inventory();
+    } finally {
+        $GLOBALS['spritz_ai_translation_invalidating'] = false;
+    }
 }
 
 function spritz_ai_translation_recent_jobs(): array {

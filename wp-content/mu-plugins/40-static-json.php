@@ -131,11 +131,7 @@ function spritz_publish_static_json_to_s3($post_id, $post, $update) {
         }
     }
 
-    $inventory = spritz_static_json_response_data('spritz_get_inventory_json', []);
-    if ($inventory !== null) {
-        spritz_write_static_json('', 'inventory.json', $inventory, 'no-store');
-        spritz_write_static_json('', 'cronkite-inventory.json', $inventory, 'no-store');
-    }
+    spritz_refresh_static_inventory();
 
     error_log(sprintf('Spritz static JSON hook complete: post=%s', (string) $post_id));
 }
@@ -169,17 +165,20 @@ function spritz_backfill_standalone_pages(): int {
         $published++;
     }
 
-    $inventory = spritz_static_json_response_data('spritz_get_inventory_json', []);
-    if ($inventory !== null) {
-        spritz_write_static_json('', 'inventory.json', $inventory, 'no-store');
-        spritz_write_static_json('', 'cronkite-inventory.json', $inventory, 'no-store');
-    }
+    spritz_refresh_static_inventory();
 
     return $published;
 }
 
 function spritz_static_json_languages(): array {
     return apply_filters('spritz_static_json_languages', ['es', 'en', 'it']);
+}
+
+function spritz_refresh_static_inventory(): void {
+    $inventory = spritz_static_json_response_data('spritz_get_inventory_json', []);
+    if ($inventory === null || !function_exists('spritz_s3_put_body') || !spritz_s3_bucket()) return;
+    spritz_write_static_json('', 'inventory.json', $inventory, 'no-store');
+    spritz_write_static_json('', 'cronkite-inventory.json', $inventory, 'no-store');
 }
 
 if (!function_exists('spritz_iso_datetime')) {

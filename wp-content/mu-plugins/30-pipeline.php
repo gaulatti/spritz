@@ -50,6 +50,45 @@ function spritz_pipeline_push($post_id, $post, $update) {
     }
 }
 
+function spritz_pipeline_unpublish_document($post): bool {
+    $post = get_post($post);
+    if (!$post || $post->post_type !== 'page' || !spritz_is_standalone_page($post)) return false;
+
+    $cronkite_url = defined('CRONKITE_URL') ? CRONKITE_URL : getenv('CRONKITE_URL');
+    $tenant_slug = defined('CRONKITE_TENANT_SLUG') ? CRONKITE_TENANT_SLUG : getenv('CRONKITE_TENANT_SLUG');
+    $pipeline_token = defined('PIPELINE_TOKEN') ? PIPELINE_TOKEN : getenv('PIPELINE_TOKEN');
+    if (!$cronkite_url || !$tenant_slug || !$pipeline_token) return false;
+
+    $document = spritz_build_canonical_page($post);
+    $response = wp_remote_post($cronkite_url . '/pipeline/unpublish', [
+        'body' => wp_json_encode([
+            'article' => [
+                'slug' => $document['slug'],
+                'layout' => 'standalone-page',
+                'status' => 'archived',
+            ],
+        ]),
+        'headers' => [
+            'Content-Type' => 'application/json',
+            'Authorization' => 'Bearer ' . $pipeline_token,
+            'x-tenant-id' => $tenant_slug,
+        ],
+        'timeout' => 15,
+        'blocking' => true,
+    ]);
+
+    if (is_wp_error($response)) {
+        error_log('Spritz standalone Page unpublish failed: ' . $response->get_error_message());
+        return false;
+    }
+    $status = (int) wp_remote_retrieve_response_code($response);
+    if ($status < 200 || $status >= 300) {
+        error_log(sprintf('Spritz standalone Page unpublish failed with HTTP %d.', $status));
+        return false;
+    }
+    return true;
+}
+
 function spritz_is_standalone_page($post): bool {
     $post = get_post($post);
     if (!$post || $post->post_type !== 'page') return false;
