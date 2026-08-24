@@ -35,6 +35,12 @@ fi
 mkdir -p /var/www/html/wordpress/wp-content/uploads
 chown -R www-data:www-data /var/www/html/wordpress/wp-content/uploads
 
+mkdir -p /run/spritz
+touch /run/spritz/metrics.json
+chown www-data:www-data /run/spritz /run/spritz/metrics.json
+chmod 770 /run/spritz
+chmod 660 /run/spritz/metrics.json
+
 mysql_ready() {
   php -r '
     mysqli_report(MYSQLI_REPORT_OFF);

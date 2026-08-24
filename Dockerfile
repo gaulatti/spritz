@@ -56,6 +56,7 @@ COPY bin/backup-policy.php /usr/local/bin/backup-policy.php
 COPY bin/backup-aws.php /usr/local/bin/backup-aws.php
 COPY bin/restore-db.php /usr/local/bin/restore-db.php
 COPY nginx.conf /etc/nginx/nginx.conf
+COPY metrics.php /usr/local/share/spritz/metrics.php
 COPY supervisord.conf /etc/supervisord.conf
 COPY wp-config.php .
 COPY docker-entrypoint.sh /usr/local/bin/
