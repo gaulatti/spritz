@@ -9,6 +9,11 @@ putenv('CRONKITE_TENANT_SLUG=modoitaliano');
 putenv('PIPELINE_TOKEN=test-only-token');
 putenv('PUBLIC_SITE_URL=https://modoitaliano.fm');
 
+add_filter('theme_page_templates', function (array $templates): array {
+    $templates['template-homepage.php'] = 'Homepage';
+    return $templates;
+});
+
 remove_action('save_post', 'spritz_publish_static_json_to_s3', 15);
 
 global $wpdb;
