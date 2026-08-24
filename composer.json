@@ -13,8 +13,40 @@
     },
     "repositories": [
         {
-            "type": "composer",
-            "url": "https://wpackagist.org"
+            "type": "package",
+            "package": {
+                "name": "wpackagist-plugin/advanced-custom-fields",
+                "version": "6.8.8",
+                "type": "wordpress-plugin",
+                "dist": {
+                    "url": "https://downloads.wordpress.org/plugin/advanced-custom-fields.6.8.8.zip",
+                    "type": "zip"
+                }
+            }
+        },
+        {
+            "type": "package",
+            "package": {
+                "name": "wpackagist-plugin/amazon-s3-and-cloudfront",
+                "version": "3.3.1",
+                "type": "wordpress-plugin",
+                "dist": {
+                    "url": "https://downloads.wordpress.org/plugin/amazon-s3-and-cloudfront.3.3.1.zip",
+                    "type": "zip"
+                }
+            }
+        },
+        {
+            "type": "package",
+            "package": {
+                "name": "wpackagist-plugin/daggerhart-openid-connect-generic",
+                "version": "3.11.3",
+                "type": "wordpress-plugin",
+                "dist": {
+                    "url": "https://downloads.wordpress.org/plugin/daggerhart-openid-connect-generic.3.11.3.zip",
+                    "type": "zip"
+                }
+            }
         }
     ],
     "extra": {
