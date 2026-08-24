@@ -83,6 +83,8 @@ $homepage_id = wp_insert_post([
 update_post_meta((int) $homepage_id, '_wp_page_template', 'template-homepage.php');
 wp_update_post(['ID' => $homepage_id, 'post_status' => 'publish']);
 spritz_page_translation_assert(spritz_ai_translation_enqueue_post((int) $homepage_id) === 0, 'homepage template must remain excluded');
+$excluded_jobs = $wpdb->get_results('SELECT * FROM ' . spritz_ai_translation_table_name() . ' ORDER BY id', ARRAY_A) ?: [];
+spritz_page_translation_assert(count($excluded_jobs) === 0, sprintf('excluded and draft Pages queued %d unexpected jobs', count($excluded_jobs)));
 
 $source_id = wp_insert_post([
     'post_type' => 'page',
@@ -97,7 +99,7 @@ update_post_meta((int) $source_id, '_spritz_language', 'es');
 wp_update_post(['ID' => $source_id, 'post_status' => 'publish']);
 
 $jobs = $wpdb->get_results('SELECT * FROM ' . spritz_ai_translation_table_name() . ' ORDER BY id', ARRAY_A) ?: [];
-spritz_page_translation_assert(count($jobs) === 2, 'published standalone Page must queue every configured target exactly once');
+spritz_page_translation_assert(count($jobs) === 2, sprintf('published standalone Page queued %d jobs instead of two', count($jobs)));
 foreach ($jobs as $job) {
     $request_body = json_decode((string) $job['request_body'], true);
     spritz_page_translation_assert(($request_body['entityType'] ?? '') === 'standalone-page', 'Page job must preserve standalone entity type');
