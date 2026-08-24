@@ -84,7 +84,11 @@ $homepage_id = wp_insert_post([
 ], true);
 update_post_meta((int) $homepage_id, '_wp_page_template', 'template-homepage.php');
 spritz_page_translation_assert(!spritz_ai_translation_is_eligible_page((int) $homepage_id), 'homepage template must be ineligible before publication');
-wp_update_post(['ID' => $homepage_id, 'post_status' => 'publish']);
+wp_update_post([
+    'ID' => $homepage_id,
+    'post_status' => 'publish',
+    'page_template' => 'template-homepage.php',
+]);
 spritz_page_translation_assert(!spritz_ai_translation_is_eligible_page((int) $homepage_id), 'homepage template must remain ineligible after publication');
 spritz_page_translation_assert(spritz_ai_translation_enqueue_post((int) $homepage_id) === 0, 'homepage template must remain excluded');
 $excluded_jobs = $wpdb->get_results('SELECT * FROM ' . spritz_ai_translation_table_name() . ' ORDER BY id', ARRAY_A) ?: [];
