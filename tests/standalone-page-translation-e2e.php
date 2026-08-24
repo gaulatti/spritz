@@ -86,13 +86,15 @@ spritz_page_translation_assert(spritz_ai_translation_enqueue_post((int) $homepag
 
 $source_id = wp_insert_post([
     'post_type' => 'page',
-    'post_status' => 'publish',
+    'post_status' => 'draft',
     'post_title' => 'Privacidad',
     'post_name' => 'privacidad',
     'post_excerpt' => 'Política de privacidad',
     'post_content' => '<!-- wp:paragraph --><p>Contenido legal.</p><!-- /wp:paragraph -->',
 ], true);
 spritz_page_translation_assert(!is_wp_error($source_id), 'source Page creation failed');
+update_post_meta((int) $source_id, '_spritz_language', 'es');
+wp_update_post(['ID' => $source_id, 'post_status' => 'publish']);
 
 $jobs = $wpdb->get_results('SELECT * FROM ' . spritz_ai_translation_table_name() . ' ORDER BY id', ARRAY_A) ?: [];
 spritz_page_translation_assert(count($jobs) === 2, 'published standalone Page must queue every configured target exactly once');
