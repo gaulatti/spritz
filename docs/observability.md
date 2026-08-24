@@ -11,8 +11,9 @@ container arguments, scrape labels, or logs.
 
 PHP-FPM, the translation worker, and the backup cron process share an ephemeral
 registry at `/run/spritz/metrics.json`. File locking makes updates safe across
-processes. The registry contains operational counters and gauges only; deleting
-the container resets it and does not affect application data.
+processes. The scrape reads that registry without booting WordPress or querying
+the database. The registry contains operational counters and gauges only;
+deleting the container resets it and does not affect application data.
 
 ## Metric contract
 
