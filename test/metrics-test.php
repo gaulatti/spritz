@@ -15,6 +15,8 @@ assert_true(spritz_metrics_authorization_status('expected', ['HTTP_AUTHORIZATION
 assert_true(spritz_metrics_authorization_status('expected', ['HTTP_X_SPRITZ_METRICS_TOKEN' => 'expected']) === 200, 'valid scraper header was rejected');
 assert_true(spritz_metrics_authorization_status('expected', ['SPRITZ_METRICS_AUTHORIZATION' => 'Bearer expected']) === 200, 'valid FastCGI bearer token was rejected');
 assert_true(spritz_metrics_authorization_status('expected', ['SPRITZ_METRICS_HEADER_TOKEN' => 'expected']) === 200, 'valid FastCGI scraper header was rejected');
+assert_true(spritz_metrics_authorization_status('expected', ['HTTP_AUTHORIZATION' => '', 'SPRITZ_METRICS_AUTHORIZATION' => 'Bearer expected']) === 200, 'empty standard bearer parameter shadowed the FastCGI bearer token');
+assert_true(spritz_metrics_authorization_status('expected', ['HTTP_X_SPRITZ_METRICS_TOKEN' => '', 'SPRITZ_METRICS_HEADER_TOKEN' => 'expected']) === 200, 'empty standard scraper parameter shadowed the FastCGI scraper token');
 
 spritz_metric_increment('spritz_http_requests_total', ['method' => 'GET', 'route' => 'now_playing', 'status_class' => '2xx']);
 spritz_metric_increment('spritz_http_requests_total', ['method' => 'POST', 'route' => 'now_playing', 'status_class' => '5xx']);
