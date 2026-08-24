@@ -71,7 +71,9 @@ $front_id = wp_insert_post([
     'post_name' => 'front-page',
 ], true);
 update_option('page_on_front', (int) $front_id);
+spritz_page_translation_assert(!spritz_ai_translation_is_eligible_page((int) $front_id), 'configured front Page must be ineligible before publication');
 wp_update_post(['ID' => $front_id, 'post_status' => 'publish']);
+spritz_page_translation_assert(!spritz_ai_translation_is_eligible_page((int) $front_id), 'configured front Page must remain ineligible after publication');
 spritz_page_translation_assert(spritz_ai_translation_enqueue_post((int) $front_id) === 0, 'configured front Page must remain excluded');
 
 $homepage_id = wp_insert_post([
@@ -81,10 +83,16 @@ $homepage_id = wp_insert_post([
     'post_name' => 'homepage-template',
 ], true);
 update_post_meta((int) $homepage_id, '_wp_page_template', 'template-homepage.php');
+spritz_page_translation_assert(!spritz_ai_translation_is_eligible_page((int) $homepage_id), 'homepage template must be ineligible before publication');
 wp_update_post(['ID' => $homepage_id, 'post_status' => 'publish']);
+spritz_page_translation_assert(!spritz_ai_translation_is_eligible_page((int) $homepage_id), 'homepage template must remain ineligible after publication');
 spritz_page_translation_assert(spritz_ai_translation_enqueue_post((int) $homepage_id) === 0, 'homepage template must remain excluded');
 $excluded_jobs = $wpdb->get_results('SELECT * FROM ' . spritz_ai_translation_table_name() . ' ORDER BY id', ARRAY_A) ?: [];
-spritz_page_translation_assert(count($excluded_jobs) === 0, sprintf('excluded and draft Pages queued %d unexpected jobs', count($excluded_jobs)));
+spritz_page_translation_assert(count($excluded_jobs) === 0, sprintf(
+    'excluded and draft Pages queued %d unexpected jobs for sources %s',
+    count($excluded_jobs),
+    implode(',', array_map(fn ($job) => (string) $job['source_post_id'], $excluded_jobs))
+));
 
 $source_id = wp_insert_post([
     'post_type' => 'page',
