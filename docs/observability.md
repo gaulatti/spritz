@@ -2,7 +2,7 @@
 
 Spritz exposes Prometheus text format 0.0.4 at `GET /metrics`. The endpoint is
 for the private managed Prometheus scraper only. Every request must provide the
-deployment-owned `METRICS_TOKEN` as `Authorization: Bearer <token>`; a missing
+deployment-owned `METRICS_TOKEN` in the `X-Spritz-Metrics-Token` header; a missing
 server token fails closed with `503`, and a missing or incorrect caller token
 returns `403`. Production network policy must additionally restrict the route
 to the private scraper path. The token belongs in the Spritz Secrets Manager
@@ -44,7 +44,7 @@ identities, tokens, credentials, content, and free-form errors as labels.
 Compose provides a local-only fixture token. After the stack is ready:
 
 ```sh
-curl --fail --header 'Authorization: Bearer local-metrics-token' \
+curl --fail --header 'X-Spritz-Metrics-Token: local-metrics-token' \
   http://localhost:8080/metrics
 ```
 
@@ -57,5 +57,5 @@ series and verifies that unknown label values fail closed.
 
 This repository owns instrumentation and private exposure only. The
 `gaulatti/prometheus` deployment must add the private Spritz target, store the
-bearer credential in its scraper configuration, and own dashboards and alerts.
+header credential in its scraper configuration, and own dashboards and alerts.
 That central configuration is deliberately not changed by this ticket.
