@@ -37,6 +37,8 @@ jobs:
         run: docker compose up --build -d
       - name: Scrape private metrics boundary
         run: |
+          docker compose exec -T wordpress sh -lc \
+            'test "$METRICS_TOKEN" = "integration-test-metrics-token"'
           for attempt in $(seq 1 60); do
             status=$(curl --silent --output /dev/null --write-out '%{http_code}' \
               --header 'X-Spritz-Metrics-Token: integration-test-metrics-token' \
