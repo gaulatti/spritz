@@ -13,6 +13,8 @@ assert_true(spritz_metrics_authorization_status('expected', []) === 403, 'missin
 assert_true(spritz_metrics_authorization_status('expected', ['HTTP_AUTHORIZATION' => 'Bearer wrong']) === 403, 'incorrect bearer token was accepted');
 assert_true(spritz_metrics_authorization_status('expected', ['HTTP_AUTHORIZATION' => 'Bearer expected']) === 200, 'valid bearer token was rejected');
 assert_true(spritz_metrics_authorization_status('expected', ['HTTP_X_SPRITZ_METRICS_TOKEN' => 'expected']) === 200, 'valid scraper header was rejected');
+assert_true(spritz_metrics_authorization_status('expected', ['SPRITZ_METRICS_AUTHORIZATION' => 'Bearer expected']) === 200, 'valid FastCGI bearer token was rejected');
+assert_true(spritz_metrics_authorization_status('expected', ['SPRITZ_METRICS_HEADER_TOKEN' => 'expected']) === 200, 'valid FastCGI scraper header was rejected');
 
 spritz_metric_increment('spritz_http_requests_total', ['method' => 'GET', 'route' => 'now_playing', 'status_class' => '2xx']);
 spritz_metric_increment('spritz_http_requests_total', ['method' => 'POST', 'route' => 'now_playing', 'status_class' => '5xx']);

@@ -47,10 +47,12 @@ function spritz_metrics_path(): string {
 
 function spritz_metrics_authorization_status(string $expected, array $server): int {
     if ($expected === '') return 503;
-    $authorization = (string) ($server['HTTP_AUTHORIZATION'] ?? '');
+    $authorization = (string) ($server['HTTP_AUTHORIZATION'] ?? $server['SPRITZ_METRICS_AUTHORIZATION'] ?? '');
     $provided = '';
     if (preg_match('/^Bearer\s+(.+)$/i', $authorization, $matches)) $provided = trim($matches[1]);
-    if ($provided === '') $provided = trim((string) ($server['HTTP_X_SPRITZ_METRICS_TOKEN'] ?? ''));
+    if ($provided === '') {
+        $provided = trim((string) ($server['HTTP_X_SPRITZ_METRICS_TOKEN'] ?? $server['SPRITZ_METRICS_HEADER_TOKEN'] ?? ''));
+    }
     return $provided !== '' && hash_equals($expected, $provided) ? 200 : 403;
 }
 
