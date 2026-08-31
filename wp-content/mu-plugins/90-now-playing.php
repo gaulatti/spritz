@@ -326,8 +326,6 @@ function spritz_now_playing_json_exists(): bool {
         $client_config['profile'] = getenv('AWS_PROFILE') ?: 'default';
     }
 
-    putenv('AWS_EC2_METADATA_DISABLED=true');
-
     try {
         $client = new \Aws\S3\S3Client($client_config);
         $client->headObject([

@@ -20,7 +20,7 @@ if ($s3_prefix && !defined('S3_UPLOADS_PREFIX')) {
 if ($s3_bucket && !defined('AS3CF_SETTINGS')) {
     define('AS3CF_SETTINGS', serialize([
         'provider' => 'aws',
-        'use-server-roles' => false,
+        'use-server-roles' => true,
         'bucket' => $s3_bucket,
         'region' => $region,
         'copy-to-s3' => true,
@@ -58,9 +58,6 @@ function spritz_configure_aws_credentials_environment() {
         $_SERVER['AWS_CONFIG_FILE'] = $config_file;
     }
 
-    putenv('AWS_EC2_METADATA_DISABLED=true');
-    $_ENV['AWS_EC2_METADATA_DISABLED'] = 'true';
-    $_SERVER['AWS_EC2_METADATA_DISABLED'] = 'true';
 }
 
 function spritz_define_as3cf_credentials_from_file($credentials_file) {

@@ -16,14 +16,26 @@ if [ -r /root/.aws/credentials ]; then
   export AWS_SHARED_CREDENTIALS_FILE=/var/www/.aws/credentials
 fi
 
+if [ "${ENV:-}" = 'production' ] && [ -z "${APP_SECRET_ARN:-}" ]; then
+  echo "APP_SECRET_ARN is required in production" >&2
+  exit 1
+fi
+
 if [ -n "${APP_SECRET_ARN:-}" ]; then
   eval "$(php /usr/local/bin/load-secrets.php)"
 fi
 
-: "${DB_HOST:=db}"
-: "${DB_NAME:=wordpress}"
-: "${DB_USER:=wordpress}"
-: "${DB_PASSWORD:=secret}"
+if [ "${ENV:-}" = 'production' ]; then
+  : "${DB_HOST:?DB_HOST is required in production}"
+  : "${DB_NAME:?DB_NAME is required in production}"
+  : "${DB_USER:?DB_USER is required in production}"
+  : "${DB_PASSWORD:?DB_PASSWORD is required in production}"
+else
+  : "${DB_HOST:=db}"
+  : "${DB_NAME:=wordpress}"
+  : "${DB_USER:=wordpress}"
+  : "${DB_PASSWORD:=secret}"
+fi
 : "${WP_HOME:=http://localhost:8080}"
 : "${WP_SITEURL:=http://localhost:8080}"
 : "${WP_TITLE:=CMS}"

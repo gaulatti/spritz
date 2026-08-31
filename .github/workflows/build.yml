@@ -8,6 +8,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
 
     steps:
       - name: Checkout code
@@ -34,39 +37,78 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     needs: build
-    env:
-      HTTP_PORT: ${{ vars.HTTP_PORT || '8080' }}
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
-      - name: Deploy to on-premises host
-        uses: appleboy/ssh-action@v1.2.0
+      - name: Checkout deployment files
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          script: |
-            sh -c '
-            docker login ghcr.io -u ${{ github.actor }} -p ${{ secrets.DEPLOYMENT_TOKEN }}
-            docker pull ghcr.io/${{ github.repository }}:latest
+          aws-region: us-east-1
+          role-to-assume: arn:aws:iam::792025092931:role/spritz-github-deploy
 
-            docker stop spritz || true
-            docker rm spritz || true
+      - name: Deploy to Cumulus through SSM
+        env:
+          APP_SECRET_ARN: ${{ secrets.APP_SECRET_ARN }}
+          APP_SECRET_KEY: ${{ secrets.APP_SECRET_KEY }}
+          DEPLOYMENT_TOKEN: ${{ secrets.DEPLOYMENT_TOKEN }}
+        run: |
+          set -euo pipefail
+          SCRIPT_BASE64="$(base64 -w 0 deploy/cumulus.sh)"
+          NGINX_BASE64="$(base64 -w 0 deploy/cumulus.nginx.conf)"
+          TOKEN_BASE64="$(printf '%s' "$DEPLOYMENT_TOKEN" | base64 -w 0)"
+          REMOTE_COMMAND="$(jq -nr \
+            --arg script "$SCRIPT_BASE64" \
+            --arg user "$GITHUB_ACTOR" \
+            --arg token "$TOKEN_BASE64" \
+            --arg secretArn "$APP_SECRET_ARN" \
+            --arg secretKey "$APP_SECRET_KEY" \
+            --arg image "ghcr.io/${GITHUB_REPOSITORY}:latest" \
+            --arg nginx "$NGINX_BASE64" \
+            '[
+              "printf %s " + ($script | @sh) + " | base64 -d > /tmp/deploy-spritz.sh",
+              "chmod 0700 /tmp/deploy-spritz.sh",
+              "/tmp/deploy-spritz.sh " + ([$user, $token, $secretArn, $secretKey, $image, $nginx] | map(@sh) | join(" ")),
+              "rm -f /tmp/deploy-spritz.sh"
+            ] | join("\n")')"
+          PARAMETERS="$(jq -cn --arg command "$REMOTE_COMMAND" '{commands:[$command],executionTimeout:["600"]}')"
+          COMMAND_ID="$(aws ssm send-command \
+            --instance-ids i-09e7bba7e8ae01351 \
+            --document-name AWS-RunShellScript \
+            --comment 'Deploy Spritz to Cumulus' \
+            --parameters "$PARAMETERS" \
+            --query 'Command.CommandId' \
+            --output text)"
 
-            LOG_STREAM_UUID=$(uuidgen)
-
-            docker run -d --name spritz \
-            -p ${{ env.HTTP_PORT }}:80 \
-            -e AWS_REGION=us-east-1 \
-            -e AWS_SHARED_CREDENTIALS_FILE=/var/www/.aws/credentials \
-            -e APP_SECRET_ARN="${{ secrets.APP_SECRET_ARN }}" \
-            -e APP_SECRET_KEY="${{ secrets.APP_SECRET_KEY }}" \
-            -e ENV=production \
-            --restart=always \
-            --log-driver=awslogs \
-            --log-opt awslogs-region=us-east-1 \
-            --log-opt awslogs-group=/services/spritz \
-            --log-opt awslogs-stream="$LOG_STREAM_UUID" \
-            -v ~/.aws:/root/.aws:ro \
-            -v spritz-uploads:/var/www/html/wordpress/wp-content/uploads \
-            ghcr.io/${{ github.repository }}:latest
-            '
+          for _ in $(seq 1 120); do
+            COMMAND_STATUS="$(aws ssm get-command-invocation \
+              --command-id "$COMMAND_ID" \
+              --instance-id i-09e7bba7e8ae01351 \
+              --query Status \
+              --output text)"
+            case "$COMMAND_STATUS" in
+              Success)
+                aws ssm get-command-invocation \
+                  --command-id "$COMMAND_ID" \
+                  --instance-id i-09e7bba7e8ae01351 \
+                  --query StandardOutputContent \
+                  --output text
+                exit 0
+                ;;
+              Failed|Cancelled|TimedOut)
+                aws ssm get-command-invocation \
+                  --command-id "$COMMAND_ID" \
+                  --instance-id i-09e7bba7e8ae01351 \
+                  --query '{Output:StandardOutputContent,Error:StandardErrorContent}' \
+                  --output json
+                exit 1
+                ;;
+            esac
+            sleep 5
+          done
+          echo "Timed out waiting for Spritz deployment"
+          exit 1

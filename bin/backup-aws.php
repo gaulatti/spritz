@@ -22,8 +22,6 @@ function spritz_assumed_s3_client(string $region, string $role_arn, string $sess
         $client_config['profile'] = getenv('AWS_PROFILE') ?: 'default';
     }
 
-    putenv('AWS_EC2_METADATA_DISABLED=true');
-
     $sts = new StsClient($client_config);
     $client_config['credentials'] = CredentialProvider::assumeRole([
         'client' => $sts,

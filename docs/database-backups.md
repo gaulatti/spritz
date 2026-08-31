@@ -9,9 +9,11 @@ tickets, pull requests, or chat.
 1. Deploy the Loredana infrastructure change first. Confirm that both CloudFront
    distributions receive an explicit S3 `Deny` for `backups/*`, lifecycle rules
    exist for all three retention tiers, and the backup audit trail is logging.
-2. In the Spritz secret, set `DB_BACKUP_WRITER_ROLE_ARN` and
-   `DB_BACKUP_RESTORE_ROLE_ARN` from the reviewed Loredana stack outputs. Grant
-   the mounted bootstrap identity only `sts:AssumeRole` for the writer role.
+2. In the Spritz application secret, set `DB_SECRET_ARN` to the Macondo-owned
+   `llanquihue` secret and set `DB_BACKUP_WRITER_ROLE_ARN` and
+   `DB_BACKUP_RESTORE_ROLE_ARN` from the reviewed Loredana stack outputs. The
+   Cumulus instance role reads both secrets and assumes only the writer role for
+   scheduled backups; no static AWS credentials are mounted in production.
 3. Deploy Spritz. Confirm one scheduled run reports only its copy count, byte
    count, and checksum algorithm. It must not log the database, bucket, or key.
    Confirm the private metrics endpoint records a successful backup and bounded
