@@ -62,7 +62,7 @@ COPY wp-config.php .
 COPY docker-entrypoint.sh /usr/local/bin/
 
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh \
-    && echo '0 * * * * php /usr/local/bin/backup-db.php 2>&1' > /etc/crontabs/root
+    && echo '0 */3 * * * php /usr/local/bin/backup-db.php 2>&1' > /etc/crontabs/root
 
 EXPOSE 80
 

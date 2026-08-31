@@ -14,8 +14,9 @@ tickets, pull requests, or chat.
    `DB_BACKUP_RESTORE_ROLE_ARN` from the reviewed Loredana stack outputs. The
    Cumulus instance role reads both secrets and assumes only the writer role for
    scheduled backups; no static AWS credentials are mounted in production.
-3. Deploy Spritz. Confirm one scheduled run reports only its copy count, byte
-   count, and checksum algorithm. It must not log the database, bucket, or key.
+3. Deploy Spritz. The container schedules database backups every three hours at
+   minute zero. Confirm one run reports only its copy count, byte count, and
+   checksum algorithm. It must not log the database, bucket, or key.
    Confirm the private metrics endpoint records a successful backup and bounded
    duration without exposing any backup identifier.
 4. Verify new objects by metadata only. Their keys must remain beneath
