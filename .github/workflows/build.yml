@@ -37,6 +37,8 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     needs: build
+    env:
+      HTTP_PORT: ${{ vars.HTTP_PORT || '8080' }}
     permissions:
       contents: read
       id-token: write
@@ -45,13 +47,49 @@ jobs:
       - name: Checkout deployment files
         uses: actions/checkout@v3
 
+      - name: Deploy to on-premises host
+        if: vars.ON_PREMISES == 'true'
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            sh -c '
+            docker login ghcr.io -u ${{ github.actor }} -p ${{ secrets.DEPLOYMENT_TOKEN }}
+            docker pull ghcr.io/${{ github.repository }}:latest
+
+            docker stop spritz || true
+            docker rm spritz || true
+
+            LOG_STREAM_UUID=$(uuidgen)
+
+            docker run -d --name spritz \
+            -p ${{ env.HTTP_PORT }}:80 \
+            -e AWS_REGION=us-east-1 \
+            -e AWS_SHARED_CREDENTIALS_FILE=/var/www/.aws/credentials \
+            -e APP_SECRET_ARN="${{ secrets.APP_SECRET_ARN }}" \
+            -e APP_SECRET_KEY="${{ secrets.APP_SECRET_KEY }}" \
+            -e ENV=production \
+            --restart=always \
+            --log-driver=awslogs \
+            --log-opt awslogs-region=us-east-1 \
+            --log-opt awslogs-group=/services/spritz \
+            --log-opt awslogs-stream="$LOG_STREAM_UUID" \
+            -v ~/.aws:/root/.aws:ro \
+            -v spritz-uploads:/var/www/html/wordpress/wp-content/uploads \
+            ghcr.io/${{ github.repository }}:latest
+            '
+
       - name: Configure AWS credentials
+        if: vars.ON_PREMISES != 'true'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: us-east-1
           role-to-assume: arn:aws:iam::792025092931:role/spritz-github-deploy
 
       - name: Deploy to Cumulus through SSM
+        if: vars.ON_PREMISES != 'true'
         env:
           APP_SECRET_ARN: ${{ secrets.APP_SECRET_ARN }}
           APP_SECRET_KEY: ${{ secrets.APP_SECRET_KEY }}
