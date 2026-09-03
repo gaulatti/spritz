@@ -13,6 +13,8 @@ jobs:
         run: php test/backup-policy-test.php
       - name: Build production image
         run: docker build -t spritz:test .
+      - name: Test uploads volume startup ownership
+        run: test/uploads-startup-test.sh spritz:test
       - name: Test bounded metrics collector
         run: php test/metrics-test.php
       - name: Check backup and restore syntax in the image

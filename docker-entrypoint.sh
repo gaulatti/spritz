@@ -44,8 +44,14 @@ fi
 : "${ADMIN_PASSWORD:=admin}"
 : "${ADMIN_EMAIL:=admin@example.com}"
 
-mkdir -p /var/www/html/wordpress/wp-content/uploads
-chown -R www-data:www-data /var/www/html/wordpress/wp-content/uploads
+uploads_dir=/var/www/html/wordpress/wp-content/uploads
+
+mkdir -p "$uploads_dir"
+chown -R www-data:www-data "$uploads_dir"
+
+wp_as_runtime_user() {
+  su-exec www-data wp "$@"
+}
 
 mkdir -p /run/spritz
 touch /run/spritz/metrics.json
@@ -80,41 +86,47 @@ done
 echo "MySQL is ready"
 
 # Auto-install WordPress if not already installed
-if ! wp core is-installed --allow-root --path=/var/www/html/wordpress 2>/dev/null; then
+if ! wp_as_runtime_user core is-installed --path=/var/www/html/wordpress 2>/dev/null; then
   echo "Installing WordPress..."
-  wp core install \
+  wp_as_runtime_user core install \
     --url="$WP_HOME" \
     --title="$WP_TITLE" \
     --admin_user="$ADMIN_USER" \
     --admin_password="$ADMIN_PASSWORD" \
     --admin_email="$ADMIN_EMAIL" \
     --skip-email \
-    --allow-root \
     --path=/var/www/html/wordpress
 
   # Activate theme
   echo "Activating theme..."
-  wp theme activate headless-placeholder \
-    --allow-root \
+  wp_as_runtime_user theme activate headless-placeholder \
     --path=/var/www/html/wordpress 2>/dev/null || true
 
   echo "WordPress installed"
 fi
 
 echo "Activating plugins..."
-wp plugin activate \
+wp_as_runtime_user plugin activate \
   advanced-custom-fields \
   amazon-s3-and-cloudfront \
   daggerhart-openid-connect-generic \
-  --allow-root \
   --path=/var/www/html/wordpress || true
 
 echo "Backfilling standalone pages..."
-wp eval '
+wp_as_runtime_user eval '
   if (function_exists("spritz_backfill_standalone_pages")) {
       $count = spritz_backfill_standalone_pages();
       fwrite(STDOUT, "Standalone pages published: " . $count . PHP_EOL);
   }
-' --allow-root --path=/var/www/html/wordpress
+' --path=/var/www/html/wordpress
+
+echo "Verifying uploads path..."
+wp_as_runtime_user eval '
+  $upload = wp_get_upload_dir();
+  if ($upload["error"] || !is_dir($upload["path"]) || !is_writable($upload["path"])) {
+      fwrite(STDERR, "WordPress uploads path is not writable by the runtime user." . PHP_EOL);
+      exit(1);
+  }
+' --path=/var/www/html/wordpress
 
 exec /usr/bin/supervisord -c /etc/supervisord.conf

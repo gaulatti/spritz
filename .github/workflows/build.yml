@@ -30,6 +30,9 @@ jobs:
         run: |
           docker build -t ghcr.io/${{ github.repository }}:latest .
 
+      - name: Test uploads volume startup ownership
+        run: test/uploads-startup-test.sh ghcr.io/${{ github.repository }}:latest
+
       - name: Push Docker image to GHCR
         run: |
           docker push ghcr.io/${{ github.repository }}:latest
